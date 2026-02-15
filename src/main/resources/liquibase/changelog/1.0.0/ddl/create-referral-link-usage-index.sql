@@ -1,0 +1,1 @@
+CREATE INDEX idx_referral_link_usage_invitee ON referral_link_usage(invitee_user_id);

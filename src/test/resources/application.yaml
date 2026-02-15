@@ -1,0 +1,26 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  liquibase:
+    change-log: classpath:liquibase/changelog/changelog.yml
+
+tajwid:
+  bot-username: tajwid_test_bot
+  flow1-to-flow2-delay: 0s
+  flow2-intro-delay: 0s
+  telegram:
+    enabled: false
+    api-base-url: https://api.telegram.org
+    bot-token: ""
+    webhook-secret: ""
+    webhook-url: ""
+    school-channel-id: "@tartil_madrasa"
+    course-channel-id: ""
+  admin-security:
+    enabled: true
+    username: test_admin
+    password: test_secret
+    allowed-ips:
+      - 127.0.0.1/32
+      - ::1/128

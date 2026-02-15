@@ -1,0 +1,3 @@
+ALTER TABLE IF EXISTS user_tags DROP CONSTRAINT IF EXISTS fk_user_tags_users;
+ALTER TABLE IF EXISTS user_tags DROP CONSTRAINT IF EXISTS uq_user_tags_user_tag;
+DROP TABLE IF EXISTS user_tags;

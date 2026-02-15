@@ -1,0 +1,80 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-users
+      author: tajwid
+      changes:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/ddl/create-users.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+      rollback:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/ddl/create-users-rollback.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: create-flow-contexts
+      author: tajwid
+      changes:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/ddl/create-flow-contexts.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+      rollback:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/ddl/create-flow-contexts-rollback.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: create-user-tags
+      author: tajwid
+      changes:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/ddl/create-user-tags.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+      rollback:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/ddl/create-user-tags-rollback.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: create-referral-link-usage
+      author: tajwid
+      changes:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/ddl/create-referral-link-usage.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+      rollback:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/ddl/create-referral-link-usage-rollback.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: create-referral-link-usage-index
+      author: tajwid
+      changes:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/ddl/create-referral-link-usage-index.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+      rollback:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/ddl/create-referral-link-usage-index-rollback.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

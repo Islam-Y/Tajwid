@@ -1,3 +1,31 @@
 spring:
   application:
     name: tajwid
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/tajwid}
+    username: ${SPRING_DATASOURCE_USERNAME:tajwid}
+    password: ${SPRING_DATASOURCE_PASSWORD:tajwid}
+  liquibase:
+    change-log: classpath:liquibase/changelog/changelog.yml
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+
+tajwid:
+  bot-username: tajwid_bot
+  school-channel-url: https://t.me/tartil_madrasa
+  course-channel-url: https://t.me/+KdrocizaxglkNzgy
+  telegram:
+    enabled: false
+    api-base-url: https://api.telegram.org
+    bot-token: ""
+    webhook-secret: ""
+    webhook-url: ""
+    school-channel-id: "@tartil_madrasa"
+    course-channel-id: ""
+  admin-security:
+    enabled: ${TAJWID_ADMIN_SECURITY_ENABLED:true}
+    username: ${TAJWID_ADMIN_SECURITY_USERNAME:admin}
+    password: ${TAJWID_ADMIN_SECURITY_PASSWORD:change-me}
+    allowed-ips: ${TAJWID_ADMIN_SECURITY_ALLOWED_IPS:127.0.0.1/32,::1/128}

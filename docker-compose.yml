@@ -1,0 +1,97 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: tajwid-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tajwid}
+      POSTGRES_USER: ${POSTGRES_USER:-tajwid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tajwid}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "5432:5432"
+    volumes:
+      - tajwid-postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tajwid-app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-tajwid}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-tajwid}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-tajwid}
+      TAJWID_TELEGRAM_ENABLED: ${TAJWID_TELEGRAM_ENABLED:-false}
+      TAJWID_TELEGRAM_BOT_TOKEN: ${TAJWID_TELEGRAM_BOT_TOKEN:-}
+      TAJWID_TELEGRAM_WEBHOOK_SECRET: ${TAJWID_TELEGRAM_WEBHOOK_SECRET:-}
+      TAJWID_TELEGRAM_WEBHOOK_URL: ${TAJWID_TELEGRAM_WEBHOOK_URL:-}
+      TAJWID_TELEGRAM_SCHOOL_CHANNEL_ID: ${TAJWID_TELEGRAM_SCHOOL_CHANNEL_ID:-@tartil_madrasa}
+      TAJWID_TELEGRAM_COURSE_CHANNEL_ID: ${TAJWID_TELEGRAM_COURSE_CHANNEL_ID:-}
+      TAJWID_BOT_USERNAME: ${TAJWID_BOT_USERNAME:-tajwid_bot}
+      TAJWID_ADMIN_SECURITY_ENABLED: ${TAJWID_ADMIN_SECURITY_ENABLED:-true}
+      TAJWID_ADMIN_SECURITY_USERNAME: ${TAJWID_ADMIN_SECURITY_USERNAME:-admin}
+      TAJWID_ADMIN_SECURITY_PASSWORD: ${TAJWID_ADMIN_SECURITY_PASSWORD:-change-me}
+      TAJWID_ADMIN_SECURITY_ALLOWED_IPS: ${TAJWID_ADMIN_SECURITY_ALLOWED_IPS:-127.0.0.1/32,::1/128}
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  db-backup:
+    image: postgres:16-alpine
+    container_name: tajwid-db-backup
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tajwid}
+      POSTGRES_USER: ${POSTGRES_USER:-tajwid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tajwid}
+      BACKUP_INTERVAL_SECONDS: ${POSTGRES_BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETENTION_DAYS: ${POSTGRES_BACKUP_RETENTION_DAYS:-14}
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        mkdir -p /backups
+        while true; do
+          ts=$$(date -u +%Y%m%d_%H%M%S)
+          PGPASSWORD=$$POSTGRES_PASSWORD pg_dump \
+            -h db \
+            -U $$POSTGRES_USER \
+            -d $$POSTGRES_DB \
+            -F c \
+            -f "/backups/tajwid_$$ts.dump"
+          find /backups -type f -name '*.dump' -mtime +$$BACKUP_RETENTION_DAYS -delete
+          sleep $$BACKUP_INTERVAL_SECONDS
+        done
+    volumes:
+      - tajwid-postgres-backups:/backups
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  tajwid-postgres-data:
+  tajwid-postgres-backups:
