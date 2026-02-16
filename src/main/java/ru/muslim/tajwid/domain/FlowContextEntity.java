@@ -46,6 +46,18 @@ public class FlowContextEntity {
     @Column(name = "age")
     private Integer age;
 
+    @Column(name = "children_count")
+    private Integer childrenCount;
+
+    @Column(name = "children_ages")
+    private String childrenAges;
+
+    @Column(name = "children_study_quran")
+    private Boolean childrenStudyQuran;
+
+    @Column(name = "children_age_index")
+    private Integer childrenAgeIndex;
+
     @Column(name = "phone")
     private String phone;
 

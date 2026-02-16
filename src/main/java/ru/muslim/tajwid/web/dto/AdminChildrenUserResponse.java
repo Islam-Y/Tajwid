@@ -1,29 +1,20 @@
 package ru.muslim.tajwid.web.dto;
 
 import java.time.Instant;
+import java.util.List;
 import ru.muslim.tajwid.domain.ReadingLevel;
-import ru.muslim.tajwid.domain.ReferralStatus;
 
-public record AdminExportUserRow(
+public record AdminChildrenUserResponse(
     Long userId,
     String telegramFirstName,
     String userName,
     Integer age,
     Integer childrenCount,
-    String childrenAges,
+    List<Integer> childrenAges,
     Boolean childrenStudyQuran,
     String phone,
     ReadingLevel readingLevel,
-    boolean schoolChannelSubscribed,
-    boolean courseChannelSubscribed,
-    boolean consentGiven,
     boolean registrationCompleted,
-    Instant registrationCompletedAt,
-    long referrerUserId,
-    ReferralStatus referralStatus,
-    Instant referralCountedAt,
-    int referralPoints,
-    String referralLinkCp,
     Instant createdAt,
     Instant updatedAt
 ) {

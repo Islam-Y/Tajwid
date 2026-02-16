@@ -38,6 +38,15 @@ public class UserEntity {
     @Column(name = "age")
     private Integer age;
 
+    @Column(name = "children_count")
+    private Integer childrenCount;
+
+    @Column(name = "children_ages")
+    private String childrenAges;
+
+    @Column(name = "children_study_quran")
+    private Boolean childrenStudyQuran;
+
     @Column(name = "phone")
     private String phone;
 

@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -46,6 +47,8 @@ public class BotFlowService {
     private static final String FLOW1_CONSENT_CONTINUE = "FLOW1_CONSENT_CONTINUE";
     private static final String FLOW1_COURSE_RECHECK = "FLOW1_COURSE_RECHECK";
     private static final String FLOW1_LEVEL_PREFIX = "FLOW1_LEVEL:";
+    private static final String FLOW1_CHILDREN_STUDY_YES = "FLOW1_CHILDREN_STUDY:YES";
+    private static final String FLOW1_CHILDREN_STUDY_NO = "FLOW1_CHILDREN_STUDY:NO";
 
     private static final String FLOW2_TERMS = "FLOW2_TERMS";
     private static final String FLOW2_SHOW_LINK = "FLOW2_SHOW_LINK";
@@ -55,6 +58,8 @@ public class BotFlowService {
 
     private static final String FLOW4_LEVEL_PREFIX = "FLOW4_LEVEL:";
     private static final String FLOW4_COURSE_CLICK_CONFIRMED = "FLOW4_COURSE_CLICK_CONFIRMED";
+    private static final String FLOW4_CHILDREN_STUDY_YES = "FLOW4_CHILDREN_STUDY:YES";
+    private static final String FLOW4_CHILDREN_STUDY_NO = "FLOW4_CHILDREN_STUDY:NO";
 
     private static final String TAG_CLICKED_SUBSCRIBED_BUTTON = "Нажал на кнопку подписался";
     private static final String TAG_SUBSCRIBED_VIA_BOT = "Подписка с бота";
@@ -63,6 +68,10 @@ public class BotFlowService {
 
     private static final EnumSet<ReferralStatus> BLOCKING_REFERRAL_STATUSES =
         EnumSet.of(ReferralStatus.PENDING, ReferralStatus.COUNTED);
+    private static final int REFERRAL_LINK_MAX_LENGTH = 512;
+    private static final int MAX_CHILDREN_COUNT = 10;
+    private static final int MIN_CHILD_AGE = 0;
+    private static final int MAX_CHILD_AGE = 100;
 
     private final FlowContextRepository flowContextRepository;
     private final UserRepository userRepository;
@@ -233,10 +242,14 @@ public class BotFlowService {
             case FLOW1_SCHOOL_RECHECK -> onFlow1SchoolRecheck(request, context, responses);
             case FLOW1_CONSENT_CONTINUE -> onFlow1ConsentContinue(request, context, responses);
             case FLOW1_COURSE_RECHECK -> onFlow1CourseRecheck(request, context, responses);
+            case FLOW1_CHILDREN_STUDY_YES -> onFlow1ChildrenStudy(request, context, responses, true);
+            case FLOW1_CHILDREN_STUDY_NO -> onFlow1ChildrenStudy(request, context, responses, false);
             case FLOW2_TERMS -> onFlow2Terms(request, context, responses);
             case FLOW2_SHOW_LINK -> onFlow2ShowLink(request, context, responses);
             case FLOW3_SCHOOL_RECHECK -> onFlow3SchoolRecheck(request, context, responses);
             case FLOW3_CONSENT_CONTINUE -> onFlow3ConsentContinue(request, context, responses);
+            case FLOW4_CHILDREN_STUDY_YES -> onFlow4ChildrenStudy(request, context, responses, true);
+            case FLOW4_CHILDREN_STUDY_NO -> onFlow4ChildrenStudy(request, context, responses, false);
             case FLOW4_COURSE_CLICK_CONFIRMED -> onFlow4CourseClickConfirmed(request, context, responses);
             default -> addMessage(responses, request.userId(),
                 "Кнопка неактуальна. Нажмите /start для начала сценария заново.");
@@ -375,10 +388,22 @@ public class BotFlowService {
         String link = user.getReferralLinkCp();
 
         if (!hasTag || link == null || link.isBlank()) {
-            link = buildReferralLink(request.userId());
-            user.setReferralLinkCp(link);
-            userRepository.save(user);
-            assignTag(request.userId(), TAG_REFERRER_GOT_LINK);
+            try {
+                link = buildReferralLink(request.userId());
+                if (link.length() > REFERRAL_LINK_MAX_LENGTH) {
+                    throw new IllegalStateException("Referral link length exceeds storage limit");
+                }
+                user.setReferralLinkCp(link);
+                userRepository.save(user);
+                assignTag(request.userId(), TAG_REFERRER_GOT_LINK);
+            } catch (RuntimeException ex) {
+                log.warn("Failed to generate or save referral link for user {}", request.userId(), ex);
+                addMessage(responses, request.userId(),
+                    "Временная ошибка при генерации ссылки. Нажмите кнопку и попробуйте снова.",
+                    callbackButton("Попробовать снова", FLOW2_SHOW_LINK));
+                context.setCurrentStep(FlowStep.FLOW2_WAIT_LINK_REQUEST);
+                return;
+            }
         }
 
         addMessage(responses, request.userId(), link);
@@ -487,9 +512,27 @@ public class BotFlowService {
             case FLOW4_WAIT_NAME -> handleNameInput(request.userId(), context, text, responses,
                 FlowStep.FLOW4_WAIT_AGE, true);
             case FLOW1_WAIT_AGE -> handleAgeInput(request.userId(), context, text, responses,
-                FlowStep.FLOW1_WAIT_PHONE, false);
+                FlowStep.FLOW1_WAIT_CHILDREN_COUNT, false);
             case FLOW4_WAIT_AGE -> handleAgeInput(request.userId(), context, text, responses,
-                FlowStep.FLOW4_WAIT_PHONE, true);
+                FlowStep.FLOW4_WAIT_CHILDREN_COUNT, true);
+            case FLOW1_WAIT_CHILDREN_COUNT -> handleChildrenCountInput(request.userId(), context, text, responses,
+                FlowStep.FLOW1_WAIT_CHILD_AGE,
+                FlowStep.FLOW1_WAIT_PHONE);
+            case FLOW4_WAIT_CHILDREN_COUNT -> handleChildrenCountInput(request.userId(), context, text, responses,
+                FlowStep.FLOW4_WAIT_CHILD_AGE,
+                FlowStep.FLOW4_WAIT_PHONE);
+            case FLOW1_WAIT_CHILD_AGE -> handleChildAgeInput(request.userId(), context, text, responses,
+                FlowStep.FLOW1_WAIT_CHILDREN_QURAN_STUDY,
+                FLOW1_CHILDREN_STUDY_YES,
+                FLOW1_CHILDREN_STUDY_NO);
+            case FLOW4_WAIT_CHILD_AGE -> handleChildAgeInput(request.userId(), context, text, responses,
+                FlowStep.FLOW4_WAIT_CHILDREN_QURAN_STUDY,
+                FLOW4_CHILDREN_STUDY_YES,
+                FLOW4_CHILDREN_STUDY_NO);
+            case FLOW1_WAIT_CHILDREN_QURAN_STUDY -> handleChildrenStudyTextInput(request.userId(), context, text,
+                responses, FlowStep.FLOW1_WAIT_PHONE, FLOW1_CHILDREN_STUDY_YES, FLOW1_CHILDREN_STUDY_NO);
+            case FLOW4_WAIT_CHILDREN_QURAN_STUDY -> handleChildrenStudyTextInput(request.userId(), context, text,
+                responses, FlowStep.FLOW4_WAIT_PHONE, FLOW4_CHILDREN_STUDY_YES, FLOW4_CHILDREN_STUDY_NO);
             case FLOW1_WAIT_PHONE, FLOW4_WAIT_PHONE -> addMessage(responses, request.userId(),
                 "Пожалуйста, отправьте ваш номер через кнопку в боте.",
                 requestContactButton("Отправить номер"));
@@ -585,8 +628,10 @@ public class BotFlowService {
         addMessage(responses, request.userId(),
             "Вы успешно зарегистрированы на курс по таджвиду!\n"
                 + "Вся информация о занятиях, ссылки и материалы будут публиковаться в Telegram-канале.\n"
-                + "Подпишитесь на канал курса, дальше бот проверит подписку автоматически.",
-            urlButton("Канал по курсу", properties.getCourseChannelUrl()));
+                + "Подпишитесь на канал курса, дальше бот проверит подписку автоматически.\n"
+                + "Если автоматическая проверка не сработает, нажмите кнопку проверки ниже.",
+            urlButton("Канал по курсу", properties.getCourseChannelUrl()),
+            callbackButton("Проверить подписку", FLOW4_COURSE_CLICK_CONFIRMED));
 
         context.setCurrentStep(FlowStep.FLOW4_WAIT_COURSE_LINK_CONFIRM);
     }
@@ -692,8 +737,165 @@ public class BotFlowService {
         }
 
         addMessage(responses, userId,
+            "Есть ли у вас дети?\n"
+                + "Укажите количество детей числом от 0 до " + MAX_CHILDREN_COUNT + ".");
+    }
+
+    private void handleChildrenCountInput(long userId,
+                                          FlowContextEntity context,
+                                          String text,
+                                          List<BotMessageResponse> responses,
+                                          FlowStep childAgeStep,
+                                          FlowStep phoneStep) {
+        Integer childrenCount = parseChildrenCount(text);
+        if (childrenCount == null) {
+            addMessage(responses, userId,
+                "Пожалуйста, укажите количество детей числом от 0 до " + MAX_CHILDREN_COUNT + ".");
+            return;
+        }
+
+        context.setChildrenCount(childrenCount);
+        context.setChildrenAges(null);
+        context.setChildrenStudyQuran(null);
+        context.setChildrenAgeIndex(null);
+
+        if (childrenCount == 0) {
+            context.setCurrentStep(phoneStep);
+            requestPhoneNumber(userId, responses);
+            return;
+        }
+
+        context.setChildrenAgeIndex(1);
+        context.setCurrentStep(childAgeStep);
+        addMessage(responses, userId, childAgePrompt(1));
+    }
+
+    private void handleChildAgeInput(long userId,
+                                     FlowContextEntity context,
+                                     String text,
+                                     List<BotMessageResponse> responses,
+                                     FlowStep childrenStudyStep,
+                                     String yesCallback,
+                                     String noCallback) {
+        Integer childrenCount = context.getChildrenCount();
+        if (childrenCount == null || childrenCount <= 0) {
+            context.setCurrentStep(childrenStudyStep == FlowStep.FLOW1_WAIT_CHILDREN_QURAN_STUDY
+                ? FlowStep.FLOW1_WAIT_CHILDREN_COUNT
+                : FlowStep.FLOW4_WAIT_CHILDREN_COUNT);
+            addMessage(responses, userId,
+                "Сначала укажите количество детей числом от 0 до " + MAX_CHILDREN_COUNT + ".");
+            return;
+        }
+
+        Integer childAgeIndex = context.getChildrenAgeIndex();
+        if (childAgeIndex == null || childAgeIndex < 1 || childAgeIndex > childrenCount) {
+            childAgeIndex = 1;
+        }
+
+        Integer childAge = parseChildAge(text);
+        if (childAge == null) {
+            addMessage(responses, userId,
+                "Пожалуйста, укажите корректный возраст " + childAgeIndex + "-го ребенка числом от "
+                    + MIN_CHILD_AGE + " до " + MAX_CHILD_AGE + ".");
+            return;
+        }
+
+        appendChildAge(context, childAge);
+
+        if (childAgeIndex >= childrenCount) {
+            context.setChildrenAgeIndex(null);
+            context.setCurrentStep(childrenStudyStep);
+            askChildrenStudyQuestion(userId, responses, yesCallback, noCallback);
+            return;
+        }
+
+        int nextChildAgeIndex = childAgeIndex + 1;
+        context.setChildrenAgeIndex(nextChildAgeIndex);
+        addMessage(responses, userId, childAgePrompt(nextChildAgeIndex));
+    }
+
+    private void onFlow1ChildrenStudy(BotUpdateRequest request,
+                                      FlowContextEntity context,
+                                      List<BotMessageResponse> responses,
+                                      boolean childrenStudyQuran) {
+        if (context.getCurrentStep() != FlowStep.FLOW1_WAIT_CHILDREN_QURAN_STUDY) {
+            addMessage(responses, request.userId(),
+                "Нажмите /start, чтобы начать регистрацию заново.");
+            return;
+        }
+
+        finalizeChildrenStudyInput(request.userId(), context, responses, childrenStudyQuran, FlowStep.FLOW1_WAIT_PHONE);
+    }
+
+    private void onFlow4ChildrenStudy(BotUpdateRequest request,
+                                      FlowContextEntity context,
+                                      List<BotMessageResponse> responses,
+                                      boolean childrenStudyQuran) {
+        if (context.getCurrentStep() != FlowStep.FLOW4_WAIT_CHILDREN_QURAN_STUDY) {
+            addMessage(responses, request.userId(),
+                "Нажмите /start, чтобы начать регистрацию заново.");
+            return;
+        }
+
+        finalizeChildrenStudyInput(request.userId(), context, responses, childrenStudyQuran, FlowStep.FLOW4_WAIT_PHONE);
+    }
+
+    private void handleChildrenStudyTextInput(long userId,
+                                              FlowContextEntity context,
+                                              String text,
+                                              List<BotMessageResponse> responses,
+                                              FlowStep nextStep,
+                                              String yesCallback,
+                                              String noCallback) {
+        Boolean childrenStudyQuran = parseYesNo(text);
+        if (childrenStudyQuran == null) {
+            addMessage(responses, userId,
+                "Пожалуйста, выберите один из вариантов ниже.",
+                callbackButton("Да", yesCallback),
+                callbackButton("Нет", noCallback));
+            return;
+        }
+
+        finalizeChildrenStudyInput(userId, context, responses, childrenStudyQuran, nextStep);
+    }
+
+    private void finalizeChildrenStudyInput(long userId,
+                                            FlowContextEntity context,
+                                            List<BotMessageResponse> responses,
+                                            boolean childrenStudyQuran,
+                                            FlowStep nextStep) {
+        context.setChildrenStudyQuran(childrenStudyQuran);
+        context.setCurrentStep(nextStep);
+
+        requestPhoneNumber(userId, responses);
+    }
+
+    private void askChildrenStudyQuestion(long userId,
+                                          List<BotMessageResponse> responses,
+                                          String yesCallback,
+                                          String noCallback) {
+        addMessage(responses, userId, "Изучают ли они Коран?",
+            callbackButton("Да", yesCallback),
+            callbackButton("Нет", noCallback));
+    }
+
+    private String childAgePrompt(int childAgeIndex) {
+        return "Укажите возраст " + childAgeIndex + "-го ребенка.";
+    }
+
+    private void requestPhoneNumber(long userId, List<BotMessageResponse> responses) {
+        addMessage(responses, userId,
             "Отправьте номер телефона через кнопку ниже.",
             requestContactButton("Отправить номер"));
+    }
+
+    private void appendChildAge(FlowContextEntity context, int childAge) {
+        String current = context.getChildrenAges();
+        if (current == null || current.isBlank()) {
+            context.setChildrenAges(String.valueOf(childAge));
+            return;
+        }
+        context.setChildrenAges(current + "," + childAge);
     }
 
     private void askReadingLevel(long userId,
@@ -738,6 +940,9 @@ public class BotFlowService {
         user.setTelegramFirstName(context.getTelegramFirstName());
         user.setUserName(context.getUserName());
         user.setAge(context.getAge());
+        user.setChildrenCount(context.getChildrenCount());
+        user.setChildrenAges(context.getChildrenAges());
+        user.setChildrenStudyQuran(context.getChildrenStudyQuran());
         user.setPhone(context.getPhone());
         user.setReadingLevel(context.getReadingLevel());
         user.setConsentGiven(true);
@@ -761,6 +966,9 @@ public class BotFlowService {
         user.setTelegramFirstName(context.getTelegramFirstName());
         user.setUserName(context.getUserName());
         user.setAge(context.getAge());
+        user.setChildrenCount(context.getChildrenCount());
+        user.setChildrenAges(context.getChildrenAges());
+        user.setChildrenStudyQuran(context.getChildrenStudyQuran());
         user.setPhone(context.getPhone());
         user.setReadingLevel(context.getReadingLevel());
         user.setConsentGiven(true);
@@ -845,6 +1053,43 @@ public class BotFlowService {
         }
     }
 
+    private Integer parseChildrenCount(String text) {
+        try {
+            int count = Integer.parseInt(text.trim());
+            if (count < 0 || count > MAX_CHILDREN_COUNT) {
+                return null;
+            }
+            return count;
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private Integer parseChildAge(String text) {
+        try {
+            int age = Integer.parseInt(text.trim());
+            if (age < MIN_CHILD_AGE || age > MAX_CHILD_AGE) {
+                return null;
+            }
+            return age;
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private Boolean parseYesNo(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+
+        String normalized = text.trim().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+            case "да", "yes", "y" -> true;
+            case "нет", "no", "n" -> false;
+            default -> null;
+        };
+    }
+
     private String buildReferralLink(long referrerUserId) {
         String username = properties.getBotUsername();
         if (username == null || username.isBlank()) {
@@ -881,6 +1126,10 @@ public class BotFlowService {
         context.setCurrentStep(FlowStep.IDLE);
         context.setUserName(null);
         context.setAge(null);
+        context.setChildrenCount(null);
+        context.setChildrenAges(null);
+        context.setChildrenStudyQuran(null);
+        context.setChildrenAgeIndex(null);
         context.setPhone(null);
         context.setReadingLevel(null);
         context.setConsentGiven(false);

@@ -78,3 +78,35 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  - changeSet:
+      id: add-children-fields-to-users
+      author: tajwid
+      changes:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/ddl/add-children-fields-to-users.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+      rollback:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/ddl/add-children-fields-to-users-rollback.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: add-children-fields-to-flow-contexts
+      author: tajwid
+      changes:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/ddl/add-children-fields-to-flow-contexts.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+      rollback:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/ddl/add-children-fields-to-flow-contexts-rollback.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

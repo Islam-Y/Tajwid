@@ -147,29 +147,29 @@ public class TelegramApiClientImpl implements TelegramApiClient {
             return markup;
         }
 
-        List<Map<String, Object>> row = new ArrayList<>();
+        List<List<Map<String, Object>>> rows = new ArrayList<>();
         for (BotButtonResponse button : buttons) {
             Map<String, Object> buttonMap = new LinkedHashMap<>();
             buttonMap.put("text", button.text());
 
             if (button.type() == ButtonType.CALLBACK) {
                 buttonMap.put("callback_data", button.value());
-                row.add(buttonMap);
+                rows.add(List.of(buttonMap));
                 continue;
             }
 
             if (button.type() == ButtonType.URL) {
                 buttonMap.put("url", button.value());
-                row.add(buttonMap);
+                rows.add(List.of(buttonMap));
             }
         }
 
-        if (row.isEmpty()) {
+        if (rows.isEmpty()) {
             return null;
         }
 
         Map<String, Object> markup = new LinkedHashMap<>();
-        markup.put("inline_keyboard", List.of(row));
+        markup.put("inline_keyboard", rows);
         return markup;
     }
 

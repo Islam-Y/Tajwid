@@ -39,7 +39,9 @@ Flow 5 принимает payload из Flow 4:
 - `referrer_user_id` (кого нужно инкрементировать);
 - `invitee_user_id` (кого засчитывают приглашённым);
 - `idempotency_key = ref:{referrer_user_id}:{invitee_user_id}`;
-- `trigger_source = flow4_course_link_click`;
+- `trigger_source` (одно из значений):
+  - `flow4_course_link_click` (ручная проверка по кнопке);
+  - `course_channel_membership_update` (авто-подтверждение по Telegram membership update);
 - `triggered_at` (timestamp).
 
 Контракт результата Flow 5:
@@ -144,7 +146,6 @@ Flow 5 принимает payload из Flow 4:
 - Если `is_already_counted = false`, считать это аномалией:
   - логировать событие как anomaly;
   - не прерывать пользовательскую цепочку.
-- Если в момент начисления возникли `lock timeout`/`deadlock`, выполнить ограниченный retry транзакции.
 - Если обновление БД неуспешно, не отправлять сообщение об успешном `+1`.
 - Если контракт из Flow 4 неполный или битый, начисление не выполнять.
 
