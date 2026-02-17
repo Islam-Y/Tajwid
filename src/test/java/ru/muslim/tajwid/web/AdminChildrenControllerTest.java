@@ -35,9 +35,9 @@ class AdminChildrenControllerTest extends PostgresContainerTestBase {
     @BeforeEach
     void setUp() {
         userRepository.deleteAll();
-        createUser(900L, "NoChildren", 0, null, null, ReadingLevel.START_FROM_ZERO);
-        createUser(901L, "ChildrenYes", 3, "5,8,11", true, ReadingLevel.KNOW_BASICS);
-        createUser(902L, "ChildrenNo", 2, "7,10", false, ReadingLevel.READ_BY_SYLLABLES);
+        createUser(900L, "NoChildren", "no_children", false, null, ReadingLevel.START_FROM_ZERO);
+        createUser(901L, "ChildrenYes", "children_yes", true, true, ReadingLevel.KNOW_BASICS);
+        createUser(902L, "ChildrenNo", "children_no", true, false, ReadingLevel.READ_BY_SYLLABLES);
     }
 
     @Test
@@ -50,8 +50,8 @@ class AdminChildrenControllerTest extends PostgresContainerTestBase {
 
         assertThat(response).isNotNull();
         assertThat(response.userId()).isEqualTo(901L);
-        assertThat(response.childrenCount()).isEqualTo(3);
-        assertThat(response.childrenAges()).containsExactly(5, 8, 11);
+        assertThat(response.telegramUsername()).isEqualTo("children_yes");
+        assertThat(response.hasChildren()).isTrue();
         assertThat(response.childrenStudyQuran()).isTrue();
     }
 
@@ -65,11 +65,11 @@ class AdminChildrenControllerTest extends PostgresContainerTestBase {
 
         assertThat(defaultList).isNotNull();
         assertThat(defaultList).extracting(AdminChildrenUserResponse::userId)
-            .containsExactly(901L, 902L);
+            .containsExactly(900L, 901L, 902L);
 
         List<AdminChildrenUserResponse> filtered = adminRestClient()
             .get()
-            .uri("/api/admin/children/users?onlyWithChildren=false&childrenStudyQuran=false&minChildrenCount=1")
+            .uri("/api/admin/children/users?hasChildren=true&childrenStudyQuran=false")
             .retrieve()
             .body(new ParameterizedTypeReference<>() {});
 
@@ -82,11 +82,9 @@ class AdminChildrenControllerTest extends PostgresContainerTestBase {
     void searchPostReturnsFilteredUsers() {
         AdminChildrenSearchRequest request = new AdminChildrenSearchRequest(
             null,
-            2,
-            3,
+            true,
             true,
             List.of(ReadingLevel.KNOW_BASICS),
-            true,
             true,
             50
         );
@@ -115,17 +113,19 @@ class AdminChildrenControllerTest extends PostgresContainerTestBase {
 
     private void createUser(Long userId,
                             String name,
-                            Integer childrenCount,
-                            String childrenAges,
+                            String username,
+                            Boolean hasChildren,
                             Boolean childrenStudyQuran,
                             ReadingLevel readingLevel) {
         UserEntity user = new UserEntity();
         user.setUserId(userId);
         user.setTelegramFirstName(name);
+        user.setTelegramUsername(username);
         user.setUserName(name);
         user.setAge(30);
-        user.setChildrenCount(childrenCount);
-        user.setChildrenAges(childrenAges);
+        user.setHasChildren(hasChildren);
+        user.setChildrenCount(Boolean.TRUE.equals(hasChildren) ? 1 : 0);
+        user.setChildrenAges(null);
         user.setChildrenStudyQuran(childrenStudyQuran);
         user.setPhone("+79990000000");
         user.setReadingLevel(readingLevel);

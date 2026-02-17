@@ -8,7 +8,7 @@ spring:
 tajwid:
   bot-username: tajwid_test_bot
   flow1-to-flow2-delay: 0s
-  flow2-intro-delay: 0s
+  automation-tick-delay: 0s
   telegram:
     enabled: false
     api-base-url: https://api.telegram.org
@@ -24,3 +24,7 @@ tajwid:
     allowed-ips:
       - 127.0.0.1/32
       - ::1/128
+  registration-notifications:
+    enabled: false
+    admin-usernames: []
+    admin-user-ids: []

@@ -14,10 +14,12 @@ public class TajwidBotProperties {
     private String botUsername = "tajwid_bot";
     private String schoolChannelUrl = "https://t.me/tartil_madrasa";
     private String courseChannelUrl = "https://t.me/+KdrocizaxglkNzgy";
-    private Duration flow1ToFlow2Delay = Duration.ofSeconds(10);
+    private Duration flow1ToFlow2Delay = Duration.ofMinutes(3);
     private Duration flow2IntroDelay = Duration.ofSeconds(40);
+    private Duration automationTickDelay = Duration.ofSeconds(30);
     private TelegramProperties telegram = new TelegramProperties();
     private AdminSecurityProperties adminSecurity = new AdminSecurityProperties();
+    private RegistrationNotificationsProperties registrationNotifications = new RegistrationNotificationsProperties();
 
     @Getter
     @Setter
@@ -40,5 +42,14 @@ public class TajwidBotProperties {
         private String username = "admin";
         private String password = "change-me";
         private List<String> allowedIps = List.of("127.0.0.1/32", "::1/128");
+    }
+
+    @Getter
+    @Setter
+    public static class RegistrationNotificationsProperties {
+
+        private boolean enabled = true;
+        private List<String> adminUsernames = List.of("Arslangaray");
+        private List<String> adminUserIds = List.of();
     }
 }

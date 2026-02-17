@@ -13,19 +13,25 @@ spring:
       ddl-auto: validate
 
 tajwid:
-  bot-username: tajwid_bot
-  school-channel-url: https://t.me/tartil_madrasa
-  course-channel-url: https://t.me/+KdrocizaxglkNzgy
+  bot-username: ${TAJWID_BOT_USERNAME:tajwid_bot}
+  school-channel-url: ${TAJWID_SCHOOL_CHANNEL_URL:https://t.me/tartil_madrasa}
+  course-channel-url: ${TAJWID_COURSE_CHANNEL_URL:https://t.me/+KdrocizaxglkNzgy}
+  flow1-to-flow2-delay: ${TAJWID_FLOW1_TO_FLOW2_DELAY:PT3M}
+  automation-tick-delay: ${TAJWID_AUTOMATION_TICK_DELAY:PT30S}
   telegram:
-    enabled: false
-    api-base-url: https://api.telegram.org
-    bot-token: ""
-    webhook-secret: ""
-    webhook-url: ""
-    school-channel-id: "@tartil_madrasa"
-    course-channel-id: ""
+    enabled: ${TAJWID_TELEGRAM_ENABLED:false}
+    api-base-url: ${TAJWID_TELEGRAM_API_BASE_URL:https://api.telegram.org}
+    bot-token: ${TAJWID_TELEGRAM_BOT_TOKEN:}
+    webhook-secret: ${TAJWID_TELEGRAM_WEBHOOK_SECRET:}
+    webhook-url: ${TAJWID_TELEGRAM_WEBHOOK_URL:}
+    school-channel-id: ${TAJWID_TELEGRAM_SCHOOL_CHANNEL_ID:@tartil_madrasa}
+    course-channel-id: ${TAJWID_TELEGRAM_COURSE_CHANNEL_ID:}
   admin-security:
     enabled: ${TAJWID_ADMIN_SECURITY_ENABLED:true}
     username: ${TAJWID_ADMIN_SECURITY_USERNAME:admin}
     password: ${TAJWID_ADMIN_SECURITY_PASSWORD:change-me}
     allowed-ips: ${TAJWID_ADMIN_SECURITY_ALLOWED_IPS:127.0.0.1/32,::1/128}
+  registration-notifications:
+    enabled: ${TAJWID_REGISTRATION_NOTIFICATIONS_ENABLED:true}
+    admin-usernames: ${TAJWID_REGISTRATION_NOTIFICATIONS_ADMIN_USERNAMES:Arslangaray}
+    admin-user-ids: ${TAJWID_REGISTRATION_NOTIFICATIONS_ADMIN_USER_IDS:}

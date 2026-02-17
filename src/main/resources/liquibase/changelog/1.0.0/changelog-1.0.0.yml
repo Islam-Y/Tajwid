@@ -110,3 +110,83 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  - changeSet:
+      id: add-has-children-and-telegram-username-to-users
+      author: tajwid
+      changes:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/ddl/add-has-children-and-telegram-username-to-users.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+      rollback:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/ddl/add-has-children-and-telegram-username-to-users-rollback.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: add-has-children-and-automation-fields-to-flow-contexts
+      author: tajwid
+      changes:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/ddl/add-has-children-and-automation-fields-to-flow-contexts.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+      rollback:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/ddl/add-has-children-and-automation-fields-to-flow-contexts-rollback.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: create-registration-notification-admins
+      author: tajwid
+      changes:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/ddl/create-registration-notification-admins.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+      rollback:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/ddl/create-registration-notification-admins-rollback.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: seed-registration-notification-admin-arslangaray
+      author: tajwid
+      changes:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/dml/seed-registration-notification-admin-arslangaray.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+      rollback:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/dml/seed-registration-notification-admin-arslangaray-rollback.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: seed-registration-notification-admin-islamyu
+      author: tajwid
+      changes:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/dml/seed-registration-notification-admin-islamyu.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+      rollback:
+        - sqlFile:
+            path: liquibase/changelog/1.0.0/dml/seed-registration-notification-admin-islamyu-rollback.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

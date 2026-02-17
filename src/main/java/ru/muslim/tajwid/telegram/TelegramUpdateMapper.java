@@ -45,6 +45,7 @@ public class TelegramUpdateMapper {
         TelegramParsedUpdate parsedUpdate = new TelegramParsedUpdate();
         parsedUpdate.setUserId(userId);
         parsedUpdate.setFirstName(resolveFirstName(from));
+        parsedUpdate.setUsername(textOrNull(from.path("username")));
         parsedUpdate.setText(textOrNull(message.path("text")));
         parsedUpdate.setContact(parseContact(message.path("contact")));
 
@@ -67,6 +68,7 @@ public class TelegramUpdateMapper {
         TelegramParsedUpdate parsedUpdate = new TelegramParsedUpdate();
         parsedUpdate.setUserId(userId);
         parsedUpdate.setFirstName(firstName);
+        parsedUpdate.setUsername(textOrNull(from.path("username")));
         parsedUpdate.setCallbackData(callbackData);
 
         return Optional.of(updateRequestMapper.toBotUpdateRequest(parsedUpdate));

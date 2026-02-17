@@ -1,6 +1,5 @@
 package ru.muslim.tajwid.service;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -22,16 +21,16 @@ public class PublicChildrenService {
         List<UserEntity> users = userRepository.findAll(Sort.by("userId"));
         long totalUsers = users.size();
         long usersWithChildren = users.stream()
-            .filter(user -> valueOrZero(user.getChildrenCount()) > 0)
+            .filter(this::resolveHasChildren)
             .count();
         long usersWithoutChildren = totalUsers - usersWithChildren;
 
         long studyTrue = users.stream()
-            .filter(user -> valueOrZero(user.getChildrenCount()) > 0)
+            .filter(this::resolveHasChildren)
             .filter(user -> Boolean.TRUE.equals(user.getChildrenStudyQuran()))
             .count();
         long studyFalse = users.stream()
-            .filter(user -> valueOrZero(user.getChildrenCount()) > 0)
+            .filter(this::resolveHasChildren)
             .filter(user -> Boolean.FALSE.equals(user.getChildrenStudyQuran()))
             .count();
         long studyUnknown = usersWithChildren - studyTrue - studyFalse;
@@ -64,32 +63,19 @@ public class PublicChildrenService {
     private PublicChildrenSelfResponse toSelfResponse(UserEntity user) {
         return new PublicChildrenSelfResponse(
             user.getUserId(),
-            user.getChildrenCount(),
-            parseChildrenAges(user.getChildrenAges()),
+            resolveHasChildren(user),
             user.getChildrenStudyQuran(),
             user.getReadingLevel()
         );
     }
 
-    private List<Integer> parseChildrenAges(String rawChildrenAges) {
-        if (rawChildrenAges == null || rawChildrenAges.isBlank()) {
-            return List.of();
+    private boolean resolveHasChildren(UserEntity user) {
+        if (user.getHasChildren() != null) {
+            return user.getHasChildren();
         }
 
-        List<Integer> result = new ArrayList<>();
-        String[] parts = rawChildrenAges.split(",");
-        for (String part : parts) {
-            String trimmed = part.trim();
-            if (trimmed.isEmpty()) {
-                continue;
-            }
-            try {
-                result.add(Integer.parseInt(trimmed));
-            } catch (NumberFormatException ignored) {
-                // Skip malformed legacy values.
-            }
-        }
-        return List.copyOf(result);
+        Integer childrenCount = user.getChildrenCount();
+        return childrenCount != null && childrenCount > 0;
     }
 
     private boolean phonesMatch(String leftPhone, String rightPhone) {
@@ -103,9 +89,5 @@ public class PublicChildrenService {
             return "";
         }
         return phone.replaceAll("\\D", "");
-    }
-
-    private int valueOrZero(Integer value) {
-        return value == null ? 0 : value;
     }
 }

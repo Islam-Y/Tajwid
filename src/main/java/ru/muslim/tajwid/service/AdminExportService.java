@@ -43,8 +43,10 @@ public class AdminExportService {
             .map(row -> csvRow(
                 row.userId(),
                 row.telegramFirstName(),
+                row.telegramUsername(),
                 row.userName(),
                 row.age(),
+                row.hasChildren(),
                 row.childrenCount(),
                 row.childrenAges(),
                 row.childrenStudyQuran(),
@@ -69,8 +71,10 @@ public class AdminExportService {
             List.of(
                 "user_id",
                 "telegram_first_name",
+                "telegram_username",
                 "user_name",
                 "age",
+                "has_children",
                 "children_count",
                 "children_ages",
                 "children_study_quran",
@@ -98,10 +102,12 @@ public class AdminExportService {
             .map(row -> csvRow(
                 row.userId(),
                 row.telegramFirstName(),
+                row.telegramUsername(),
                 row.currentStep(),
                 row.flowType(),
                 row.userName(),
                 row.age(),
+                row.hasChildren(),
                 row.childrenCount(),
                 row.childrenAges(),
                 row.childrenStudyQuran(),
@@ -114,6 +120,8 @@ public class AdminExportService {
                 row.referralEntrySource(),
                 row.referralEntryAt(),
                 row.tempTags(),
+                row.referralAnnouncementDueAt(),
+                row.referralAnnouncementSent(),
                 row.createdAt(),
                 row.updatedAt()
             ))
@@ -123,10 +131,12 @@ public class AdminExportService {
             List.of(
                 "user_id",
                 "telegram_first_name",
+                "telegram_username",
                 "current_step",
                 "flow_type",
                 "user_name",
                 "age",
+                "has_children",
                 "children_count",
                 "children_ages",
                 "children_study_quran",
@@ -139,6 +149,8 @@ public class AdminExportService {
                 "referral_entry_source",
                 "referral_entry_at",
                 "temp_tags",
+                "referral_announcement_due_at",
+                "referral_announcement_sent",
                 "created_at",
                 "updated_at"
             ),

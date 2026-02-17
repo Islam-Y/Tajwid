@@ -8,10 +8,12 @@ import ru.muslim.tajwid.domain.ReadingLevel;
 public record AdminExportFlowContextRow(
     Long userId,
     String telegramFirstName,
+    String telegramUsername,
     FlowStep currentStep,
     FlowType flowType,
     String userName,
     Integer age,
+    Boolean hasChildren,
     Integer childrenCount,
     String childrenAges,
     Boolean childrenStudyQuran,
@@ -24,6 +26,8 @@ public record AdminExportFlowContextRow(
     String referralEntrySource,
     Instant referralEntryAt,
     String tempTags,
+    Instant referralAnnouncementDueAt,
+    boolean referralAnnouncementSent,
     Instant createdAt,
     Instant updatedAt
 ) {

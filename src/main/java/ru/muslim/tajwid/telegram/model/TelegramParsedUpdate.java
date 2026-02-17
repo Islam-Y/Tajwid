@@ -7,6 +7,7 @@ public class TelegramParsedUpdate {
 
     private Long userId;
     private String firstName;
+    private String username;
     private String text;
     private String callbackData;
     private TelegramParsedContact contact;

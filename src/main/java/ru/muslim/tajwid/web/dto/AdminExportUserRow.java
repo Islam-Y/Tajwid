@@ -7,8 +7,10 @@ import ru.muslim.tajwid.domain.ReferralStatus;
 public record AdminExportUserRow(
     Long userId,
     String telegramFirstName,
+    String telegramUsername,
     String userName,
     Integer age,
+    Boolean hasChildren,
     Integer childrenCount,
     String childrenAges,
     Boolean childrenStudyQuran,

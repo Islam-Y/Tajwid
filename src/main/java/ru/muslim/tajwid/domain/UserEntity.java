@@ -32,11 +32,17 @@ public class UserEntity {
     @Column(name = "telegram_first_name")
     private String telegramFirstName;
 
+    @Column(name = "telegram_username")
+    private String telegramUsername;
+
     @Column(name = "user_name")
     private String userName;
 
     @Column(name = "age")
     private Integer age;
+
+    @Column(name = "has_children")
+    private Boolean hasChildren;
 
     @Column(name = "children_count")
     private Integer childrenCount;

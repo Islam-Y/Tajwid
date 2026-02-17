@@ -32,6 +32,9 @@ public class FlowContextEntity {
     @Column(name = "telegram_first_name")
     private String telegramFirstName;
 
+    @Column(name = "telegram_username")
+    private String telegramUsername;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "current_step", nullable = false)
     private FlowStep currentStep = FlowStep.IDLE;
@@ -45,6 +48,9 @@ public class FlowContextEntity {
 
     @Column(name = "age")
     private Integer age;
+
+    @Column(name = "has_children")
+    private Boolean hasChildren;
 
     @Column(name = "children_count")
     private Integer childrenCount;
@@ -82,6 +88,12 @@ public class FlowContextEntity {
 
     @Column(name = "temp_tags")
     private String tempTags;
+
+    @Column(name = "referral_announcement_due_at")
+    private Instant referralAnnouncementDueAt;
+
+    @Column(name = "referral_announcement_sent", nullable = false)
+    private boolean referralAnnouncementSent;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;

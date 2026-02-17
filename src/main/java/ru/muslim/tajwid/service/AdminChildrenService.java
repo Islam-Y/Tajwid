@@ -1,6 +1,5 @@
 package ru.muslim.tajwid.service;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -29,19 +28,17 @@ public class AdminChildrenService {
             .map(this::toResponse);
     }
 
-    public List<AdminChildrenUserResponse> getUsers(boolean onlyWithChildren,
+    public List<AdminChildrenUserResponse> getUsers(Boolean hasChildren,
                                                     Boolean childrenStudyQuran,
-                                                    Integer minChildrenCount,
-                                                    Integer maxChildrenCount,
+                                                    List<ReadingLevel> readingLevels,
+                                                    Boolean registrationCompleted,
                                                     Integer limit) {
         return searchInternal(
             null,
-            minChildrenCount,
-            maxChildrenCount,
+            hasChildren,
             childrenStudyQuran,
-            null,
-            null,
-            onlyWithChildren,
+            readingLevels,
+            registrationCompleted,
             limit
         );
     }
@@ -50,46 +47,29 @@ public class AdminChildrenService {
         AdminChildrenSearchRequest safeRequest = request == null ? AdminChildrenSearchRequest.empty() : request;
         return searchInternal(
             safeRequest.userIds(),
-            safeRequest.minChildrenCount(),
-            safeRequest.maxChildrenCount(),
+            safeRequest.hasChildren(),
             safeRequest.childrenStudyQuran(),
             safeRequest.readingLevels(),
             safeRequest.registrationCompleted(),
-            safeRequest.onlyWithChildren(),
             safeRequest.limit()
         );
     }
 
     private List<AdminChildrenUserResponse> searchInternal(List<Long> userIds,
-                                                           Integer minChildrenCount,
-                                                           Integer maxChildrenCount,
+                                                           Boolean hasChildren,
                                                            Boolean childrenStudyQuran,
                                                            List<ReadingLevel> readingLevels,
                                                            Boolean registrationCompleted,
-                                                           Boolean onlyWithChildren,
                                                            Integer limit) {
         int normalizedLimit = normalizeLimit(limit);
-        int minCount = minChildrenCount == null ? 0 : minChildrenCount;
-        int maxCount = maxChildrenCount == null ? Integer.MAX_VALUE : maxChildrenCount;
-        boolean requireChildren = onlyWithChildren == null || onlyWithChildren;
         Set<Long> userIdFilter = userIds == null ? Set.of() : new HashSet<>(userIds);
         Set<ReadingLevel> readingLevelFilter = readingLevels == null
             ? Set.of()
             : new HashSet<>(readingLevels);
 
-        if (minCount > maxCount) {
-            return List.of();
-        }
-
         return userRepository.findAll(Sort.by("userId")).stream()
             .filter(user -> userIdFilter.isEmpty() || userIdFilter.contains(user.getUserId()))
-            .filter(user -> {
-                int childrenCount = valueOrZero(user.getChildrenCount());
-                if (childrenCount < minCount || childrenCount > maxCount) {
-                    return false;
-                }
-                return !requireChildren || childrenCount > 0;
-            })
+            .filter(user -> hasChildren == null || Objects.equals(hasChildren, resolveHasChildren(user)))
             .filter(user -> childrenStudyQuran == null
                 || Objects.equals(childrenStudyQuran, user.getChildrenStudyQuran()))
             .filter(user -> readingLevelFilter.isEmpty()
@@ -105,10 +85,10 @@ public class AdminChildrenService {
         return new AdminChildrenUserResponse(
             entity.getUserId(),
             entity.getTelegramFirstName(),
+            entity.getTelegramUsername(),
             entity.getUserName(),
             entity.getAge(),
-            entity.getChildrenCount(),
-            parseChildrenAges(entity.getChildrenAges()),
+            resolveHasChildren(entity),
             entity.getChildrenStudyQuran(),
             entity.getPhone(),
             entity.getReadingLevel(),
@@ -118,25 +98,15 @@ public class AdminChildrenService {
         );
     }
 
-    private List<Integer> parseChildrenAges(String rawChildrenAges) {
-        if (rawChildrenAges == null || rawChildrenAges.isBlank()) {
-            return List.of();
+    private Boolean resolveHasChildren(UserEntity user) {
+        if (user.getHasChildren() != null) {
+            return user.getHasChildren();
         }
-
-        List<Integer> result = new ArrayList<>();
-        String[] parts = rawChildrenAges.split(",");
-        for (String part : parts) {
-            String trimmed = part.trim();
-            if (trimmed.isEmpty()) {
-                continue;
-            }
-            try {
-                result.add(Integer.parseInt(trimmed));
-            } catch (NumberFormatException ignored) {
-                // Skip malformed values in legacy rows.
-            }
+        Integer childrenCount = user.getChildrenCount();
+        if (childrenCount == null) {
+            return null;
         }
-        return List.copyOf(result);
+        return childrenCount > 0;
     }
 
     private int normalizeLimit(Integer limit) {
@@ -147,9 +117,5 @@ public class AdminChildrenService {
             return 1;
         }
         return Math.min(limit, MAX_LIMIT);
-    }
-
-    private int valueOrZero(Integer value) {
-        return value == null ? 0 : value;
     }
 }

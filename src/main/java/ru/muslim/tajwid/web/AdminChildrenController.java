@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
+import ru.muslim.tajwid.domain.ReadingLevel;
 import ru.muslim.tajwid.service.AdminChildrenService;
 import ru.muslim.tajwid.web.dto.AdminChildrenSearchRequest;
 import ru.muslim.tajwid.web.dto.AdminChildrenUserResponse;
@@ -30,17 +31,17 @@ public class AdminChildrenController {
 
     @GetMapping("/users")
     public List<AdminChildrenUserResponse> getUsers(
-        @RequestParam(defaultValue = "true") boolean onlyWithChildren,
+        @RequestParam(required = false) Boolean hasChildren,
         @RequestParam(required = false) Boolean childrenStudyQuran,
-        @RequestParam(required = false) Integer minChildrenCount,
-        @RequestParam(required = false) Integer maxChildrenCount,
+        @RequestParam(required = false) List<ReadingLevel> readingLevels,
+        @RequestParam(required = false) Boolean registrationCompleted,
         @RequestParam(defaultValue = "100") Integer limit
     ) {
         return childrenService.getUsers(
-            onlyWithChildren,
+            hasChildren,
             childrenStudyQuran,
-            minChildrenCount,
-            maxChildrenCount,
+            readingLevels,
+            registrationCompleted,
             limit
         );
     }

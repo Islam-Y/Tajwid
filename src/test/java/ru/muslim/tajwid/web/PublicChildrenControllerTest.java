@@ -36,9 +36,9 @@ class PublicChildrenControllerTest extends PostgresContainerTestBase {
     void setUp() {
         referralLinkUsageRepository.deleteAll();
         userRepository.deleteAll();
-        createUser(910L, "A", 0, null, null, ReadingLevel.START_FROM_ZERO, "8(917)111-22-33");
-        createUser(911L, "B", 2, "6,9", true, ReadingLevel.KNOW_BASICS, "+7 917 222 33 44");
-        createUser(912L, "C", 1, "4", false, ReadingLevel.READ_BY_SYLLABLES, "79173334455");
+        createUser(910L, "A", false, null, ReadingLevel.START_FROM_ZERO, "8(917)111-22-33");
+        createUser(911L, "B", true, true, ReadingLevel.KNOW_BASICS, "+7 917 222 33 44");
+        createUser(912L, "C", true, false, ReadingLevel.READ_BY_SYLLABLES, "79173334455");
     }
 
     @Test
@@ -79,8 +79,7 @@ class PublicChildrenControllerTest extends PostgresContainerTestBase {
 
         assertThat(response).isNotNull();
         assertThat(response.userId()).isEqualTo(911L);
-        assertThat(response.childrenCount()).isEqualTo(2);
-        assertThat(response.childrenAges()).containsExactly(6, 9);
+        assertThat(response.hasChildren()).isTrue();
         assertThat(response.childrenStudyQuran()).isTrue();
     }
 
@@ -103,8 +102,7 @@ class PublicChildrenControllerTest extends PostgresContainerTestBase {
 
     private void createUser(Long userId,
                             String name,
-                            Integer childrenCount,
-                            String childrenAges,
+                            Boolean hasChildren,
                             Boolean childrenStudyQuran,
                             ReadingLevel readingLevel,
                             String phone) {
@@ -113,8 +111,9 @@ class PublicChildrenControllerTest extends PostgresContainerTestBase {
         user.setTelegramFirstName(name);
         user.setUserName(name);
         user.setAge(30);
-        user.setChildrenCount(childrenCount);
-        user.setChildrenAges(childrenAges);
+        user.setHasChildren(hasChildren);
+        user.setChildrenCount(Boolean.TRUE.equals(hasChildren) ? 1 : 0);
+        user.setChildrenAges(null);
         user.setChildrenStudyQuran(childrenStudyQuran);
         user.setPhone(phone);
         user.setReadingLevel(readingLevel);

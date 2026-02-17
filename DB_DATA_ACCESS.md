@@ -75,7 +75,7 @@ curl -fsS -u "$ADMIN_USER:$ADMIN_PASS" \
 
 curl -fsS -u "$ADMIN_USER:$ADMIN_PASS" \
   -H "Content-Type: application/json" \
-  -d '{"onlyWithChildren":true,"childrenStudyQuran":true,"limit":100}' \
+  -d '{"hasChildren":true,"childrenStudyQuran":true,"limit":100}' \
   "$BASE_URL/api/admin/children/search" -o children-search.json
 ```
 
@@ -102,7 +102,7 @@ curl -fsS -u "$ADMIN_USER:$ADMIN_PASS" \
 
 ```json
 {
-  "onlyWithChildren": true,
+  "hasChildren": true,
   "childrenStudyQuran": true,
   "limit": 100
 }

@@ -1,8 +1,11 @@
 package ru.muslim.tajwid.service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -20,10 +23,12 @@ import ru.muslim.tajwid.domain.FlowContextEntity;
 import ru.muslim.tajwid.domain.FlowStep;
 import ru.muslim.tajwid.domain.FlowType;
 import ru.muslim.tajwid.domain.ReadingLevel;
+import ru.muslim.tajwid.domain.RegistrationNotificationAdminEntity;
 import ru.muslim.tajwid.domain.ReferralStatus;
 import ru.muslim.tajwid.domain.UserEntity;
 import ru.muslim.tajwid.domain.UserTagEntity;
 import ru.muslim.tajwid.repository.FlowContextRepository;
+import ru.muslim.tajwid.repository.RegistrationNotificationAdminRepository;
 import ru.muslim.tajwid.repository.ReferralLinkUsageRepository;
 import ru.muslim.tajwid.repository.UserRepository;
 import ru.muslim.tajwid.repository.UserTagRepository;
@@ -47,6 +52,8 @@ public class BotFlowService {
     private static final String FLOW1_CONSENT_CONTINUE = "FLOW1_CONSENT_CONTINUE";
     private static final String FLOW1_COURSE_RECHECK = "FLOW1_COURSE_RECHECK";
     private static final String FLOW1_LEVEL_PREFIX = "FLOW1_LEVEL:";
+    private static final String FLOW1_HAS_CHILDREN_YES = "FLOW1_HAS_CHILDREN:YES";
+    private static final String FLOW1_HAS_CHILDREN_NO = "FLOW1_HAS_CHILDREN:NO";
     private static final String FLOW1_CHILDREN_STUDY_YES = "FLOW1_CHILDREN_STUDY:YES";
     private static final String FLOW1_CHILDREN_STUDY_NO = "FLOW1_CHILDREN_STUDY:NO";
 
@@ -58,6 +65,8 @@ public class BotFlowService {
 
     private static final String FLOW4_LEVEL_PREFIX = "FLOW4_LEVEL:";
     private static final String FLOW4_COURSE_CLICK_CONFIRMED = "FLOW4_COURSE_CLICK_CONFIRMED";
+    private static final String FLOW4_HAS_CHILDREN_YES = "FLOW4_HAS_CHILDREN:YES";
+    private static final String FLOW4_HAS_CHILDREN_NO = "FLOW4_HAS_CHILDREN:NO";
     private static final String FLOW4_CHILDREN_STUDY_YES = "FLOW4_CHILDREN_STUDY:YES";
     private static final String FLOW4_CHILDREN_STUDY_NO = "FLOW4_CHILDREN_STUDY:NO";
 
@@ -65,17 +74,16 @@ public class BotFlowService {
     private static final String TAG_SUBSCRIBED_VIA_BOT = "Подписка с бота";
     private static final String TAG_REFERRER_GOT_LINK = "Рефер получил ссылку";
     private static final String TAG_COURSE_CHANNEL_CONFIRMED = "Подписка на канал курса подтверждена";
+    private static final String DEFAULT_ADMIN_USERNAME = "Arslangaray";
 
     private static final EnumSet<ReferralStatus> BLOCKING_REFERRAL_STATUSES =
         EnumSet.of(ReferralStatus.PENDING, ReferralStatus.COUNTED);
     private static final int REFERRAL_LINK_MAX_LENGTH = 512;
-    private static final int MAX_CHILDREN_COUNT = 10;
-    private static final int MIN_CHILD_AGE = 0;
-    private static final int MAX_CHILD_AGE = 100;
 
     private final FlowContextRepository flowContextRepository;
     private final UserRepository userRepository;
     private final UserTagRepository userTagRepository;
+    private final RegistrationNotificationAdminRepository registrationNotificationAdminRepository;
     private final ReferralLinkUsageRepository referralLinkUsageRepository;
     private final ChannelSubscriptionService channelSubscriptionService;
     private final ReferralBonusService referralBonusService;
@@ -86,6 +94,7 @@ public class BotFlowService {
         FlowContextEntity context = flowContextRepository.findByUserId(request.userId())
             .orElseGet(() -> createDefaultContext(request.userId(), request.firstName()));
         context.setTelegramFirstName(request.firstName());
+        context.setTelegramUsername(normalizeUsername(request.username()));
 
         List<BotMessageResponse> responses = new ArrayList<>();
 
@@ -124,6 +133,13 @@ public class BotFlowService {
     @Transactional
     public BotUpdateResult handleCourseChannelSubscriptionConfirmed(long userId) {
         List<BotMessageResponse> responses = new ArrayList<>();
+
+        SubscriptionCheckResult result = channelSubscriptionService.checkCourseChannelSubscription(userId);
+        if (result != SubscriptionCheckResult.SUBSCRIBED) {
+            log.info("Skip course membership confirmation for user {}: {}", userId, result);
+            return new BotUpdateResult(responses);
+        }
+
         FlowContextEntity context = flowContextRepository.findByUserId(userId).orElse(null);
 
         confirmCourseSubscriptionAndProcessReferral(
@@ -132,6 +148,16 @@ public class BotFlowService {
             responses,
             "course_channel_membership_update"
         );
+
+        return new BotUpdateResult(responses);
+    }
+
+    @Transactional
+    public BotUpdateResult processScheduledAutomations() {
+        List<BotMessageResponse> responses = new ArrayList<>();
+
+        processDueReferralAnnouncements(Instant.now(), responses);
+        processPendingReferralAwards(responses);
 
         return new BotUpdateResult(responses);
     }
@@ -169,7 +195,7 @@ public class BotFlowService {
 
         if (subscription == SubscriptionCheckResult.SUBSCRIBED) {
             addMessage(responses, request.userId(),
-                "Ассаламу алейкум ва рахматуЛлахи ва баракатух!\n"
+                "Ассаламу алейкум ва рахматуЛлахи ва баракатух! 🌙\n"
                     + "Вы записываетесь на бесплатный курс по таджвиду в месяц Рамадан.",
                 callbackButton("Продолжить", FLOW1_INTRO_CONTINUE));
             context.setCurrentStep(FlowStep.FLOW1_WAIT_INTRO_CONTINUE);
@@ -177,7 +203,7 @@ public class BotFlowService {
         }
 
         addMessage(responses, request.userId(),
-            "Ассаламу алейкум ва рахматуЛлахи ва баракатух!\n"
+            "Ассаламу алейкум ва рахматуЛлахи ва баракатух! 🌙\n"
                 + "Вы записываетесь на бесплатный курс по таджвиду в месяц Рамадан.\n"
                 + "Для участия необходимо сначала подписаться на наш Telegram-канал.\n"
                 + "Пожалуйста, подпишитесь на канал и затем нажмите кнопку ниже для продолжения регистрации.",
@@ -215,7 +241,7 @@ public class BotFlowService {
         context.setCurrentStep(FlowStep.FLOW3_WAIT_SCHOOL_SUBSCRIPTION_RECHECK);
 
         addMessage(responses, request.userId(),
-            "Ассаламу алейкум ва рахматуЛлахи ва баракатух!\n"
+            "Ассаламу алейкум ва рахматуЛлахи ва баракатух! 🌙\n"
                 + "Ваш друг позаботился о вас и пригласил на наш курс по таджвиду.\n"
                 + "Для участия необходимо сначала подписаться на наш Telegram-канал.\n"
                 + "Пожалуйста, подпишитесь на канал и затем нажмите кнопку ниже для продолжения регистрации.",
@@ -242,12 +268,16 @@ public class BotFlowService {
             case FLOW1_SCHOOL_RECHECK -> onFlow1SchoolRecheck(request, context, responses);
             case FLOW1_CONSENT_CONTINUE -> onFlow1ConsentContinue(request, context, responses);
             case FLOW1_COURSE_RECHECK -> onFlow1CourseRecheck(request, context, responses);
+            case FLOW1_HAS_CHILDREN_YES -> onFlow1HasChildren(request, context, responses, true);
+            case FLOW1_HAS_CHILDREN_NO -> onFlow1HasChildren(request, context, responses, false);
             case FLOW1_CHILDREN_STUDY_YES -> onFlow1ChildrenStudy(request, context, responses, true);
             case FLOW1_CHILDREN_STUDY_NO -> onFlow1ChildrenStudy(request, context, responses, false);
             case FLOW2_TERMS -> onFlow2Terms(request, context, responses);
             case FLOW2_SHOW_LINK -> onFlow2ShowLink(request, context, responses);
             case FLOW3_SCHOOL_RECHECK -> onFlow3SchoolRecheck(request, context, responses);
             case FLOW3_CONSENT_CONTINUE -> onFlow3ConsentContinue(request, context, responses);
+            case FLOW4_HAS_CHILDREN_YES -> onFlow4HasChildren(request, context, responses, true);
+            case FLOW4_HAS_CHILDREN_NO -> onFlow4HasChildren(request, context, responses, false);
             case FLOW4_CHILDREN_STUDY_YES -> onFlow4ChildrenStudy(request, context, responses, true);
             case FLOW4_CHILDREN_STUDY_NO -> onFlow4ChildrenStudy(request, context, responses, false);
             case FLOW4_COURSE_CLICK_CONFIRMED -> onFlow4CourseClickConfirmed(request, context, responses);
@@ -260,8 +290,6 @@ public class BotFlowService {
                                       FlowContextEntity context,
                                       List<BotMessageResponse> responses) {
         if (context.getCurrentStep() != FlowStep.FLOW1_WAIT_INTRO_CONTINUE) {
-            addMessage(responses, request.userId(),
-                "Нажмите /start, чтобы начать регистрацию заново.");
             return;
         }
 
@@ -305,8 +333,6 @@ public class BotFlowService {
                                         FlowContextEntity context,
                                         List<BotMessageResponse> responses) {
         if (context.getCurrentStep() != FlowStep.FLOW1_WAIT_CONSENT_ACCEPT) {
-            addMessage(responses, request.userId(),
-                "Нажмите /start, чтобы начать регистрацию заново.");
             return;
         }
 
@@ -321,8 +347,6 @@ public class BotFlowService {
                                       FlowContextEntity context,
                                       List<BotMessageResponse> responses) {
         if (context.getCurrentStep() != FlowStep.FLOW1_WAIT_COURSE_SUBSCRIPTION_RECHECK) {
-            addMessage(responses, request.userId(),
-                "Нажмите /start, чтобы начать регистрацию заново.");
             return;
         }
 
@@ -363,7 +387,7 @@ public class BotFlowService {
         }
 
         addMessage(responses, request.userId(),
-            "Условия участия:\n"
+            "📌 Условия участия:\n"
                 + "1) У вас персональная ссылка приглашения.\n"
                 + "2) Приглашение засчитывается после того, как друг перейдет по ссылке, "
                 + "завершит регистрацию и перейдет в канал курса.\n"
@@ -409,7 +433,7 @@ public class BotFlowService {
         addMessage(responses, request.userId(), link);
         addMessage(responses, request.userId(),
             "Выше ваша пригласительная ссылка.\n"
-                + "Начинайте прямо сейчас и приводите братьев к благу.");
+                + "Начинайте прямо сейчас и приводите братьев к благу 🤲");
         context.setCurrentStep(FlowStep.IDLE);
     }
 
@@ -455,8 +479,6 @@ public class BotFlowService {
                                         FlowContextEntity context,
                                         List<BotMessageResponse> responses) {
         if (context.getCurrentStep() != FlowStep.FLOW3_WAIT_CONSENT_ACCEPT) {
-            addMessage(responses, request.userId(),
-                "Нажмите /start по реферальной ссылке, чтобы продолжить.");
             return;
         }
 
@@ -470,8 +492,6 @@ public class BotFlowService {
                                              FlowContextEntity context,
                                              List<BotMessageResponse> responses) {
         if (context.getCurrentStep() != FlowStep.FLOW4_WAIT_COURSE_LINK_CONFIRM) {
-            addMessage(responses, request.userId(),
-                "Нажмите /start, чтобы начать регистрацию заново.");
             return;
         }
 
@@ -512,20 +532,22 @@ public class BotFlowService {
             case FLOW4_WAIT_NAME -> handleNameInput(request.userId(), context, text, responses,
                 FlowStep.FLOW4_WAIT_AGE, true);
             case FLOW1_WAIT_AGE -> handleAgeInput(request.userId(), context, text, responses,
-                FlowStep.FLOW1_WAIT_CHILDREN_COUNT, false);
+                FlowStep.FLOW1_WAIT_HAS_CHILDREN, false);
             case FLOW4_WAIT_AGE -> handleAgeInput(request.userId(), context, text, responses,
-                FlowStep.FLOW4_WAIT_CHILDREN_COUNT, true);
-            case FLOW1_WAIT_CHILDREN_COUNT -> handleChildrenCountInput(request.userId(), context, text, responses,
-                FlowStep.FLOW1_WAIT_CHILD_AGE,
+                FlowStep.FLOW4_WAIT_HAS_CHILDREN, true);
+            case FLOW1_WAIT_HAS_CHILDREN, FLOW1_WAIT_CHILDREN_COUNT -> handleHasChildrenInput(
+                request.userId(), context, text, responses,
+                FlowStep.FLOW1_WAIT_CHILDREN_QURAN_STUDY,
                 FlowStep.FLOW1_WAIT_PHONE);
-            case FLOW4_WAIT_CHILDREN_COUNT -> handleChildrenCountInput(request.userId(), context, text, responses,
-                FlowStep.FLOW4_WAIT_CHILD_AGE,
+            case FLOW4_WAIT_HAS_CHILDREN, FLOW4_WAIT_CHILDREN_COUNT -> handleHasChildrenInput(
+                request.userId(), context, text, responses,
+                FlowStep.FLOW4_WAIT_CHILDREN_QURAN_STUDY,
                 FlowStep.FLOW4_WAIT_PHONE);
-            case FLOW1_WAIT_CHILD_AGE -> handleChildAgeInput(request.userId(), context, text, responses,
+            case FLOW1_WAIT_CHILD_AGE -> handleLegacyChildAgeInput(request.userId(), context, responses,
                 FlowStep.FLOW1_WAIT_CHILDREN_QURAN_STUDY,
                 FLOW1_CHILDREN_STUDY_YES,
                 FLOW1_CHILDREN_STUDY_NO);
-            case FLOW4_WAIT_CHILD_AGE -> handleChildAgeInput(request.userId(), context, text, responses,
+            case FLOW4_WAIT_CHILD_AGE -> handleLegacyChildAgeInput(request.userId(), context, responses,
                 FlowStep.FLOW4_WAIT_CHILDREN_QURAN_STUDY,
                 FLOW4_CHILDREN_STUDY_YES,
                 FLOW4_CHILDREN_STUDY_NO);
@@ -533,6 +555,9 @@ public class BotFlowService {
                 responses, FlowStep.FLOW1_WAIT_PHONE, FLOW1_CHILDREN_STUDY_YES, FLOW1_CHILDREN_STUDY_NO);
             case FLOW4_WAIT_CHILDREN_QURAN_STUDY -> handleChildrenStudyTextInput(request.userId(), context, text,
                 responses, FlowStep.FLOW4_WAIT_PHONE, FLOW4_CHILDREN_STUDY_YES, FLOW4_CHILDREN_STUDY_NO);
+            case FLOW1_WAIT_REFERRAL_PROGRAM_ANNOUNCEMENT, FLOW4_WAIT_REFERRAL_PROGRAM_ANNOUNCEMENT ->
+                addMessage(responses, request.userId(),
+                    "Почти готово 🙌 Реферальную программу пришлю автоматически через пару минут.");
             case FLOW1_WAIT_PHONE, FLOW4_WAIT_PHONE -> addMessage(responses, request.userId(),
                 "Пожалуйста, отправьте ваш номер через кнопку в боте.",
                 requestContactButton("Отправить номер"));
@@ -588,18 +613,16 @@ public class BotFlowService {
 
         context.setReadingLevel(level);
         addTempTag(context, level.label());
-        upsertNormalUser(request.userId(), context);
+        UserEntity user = upsertNormalUser(request.userId(), context);
         flushTempTagsToUser(request.userId(), context);
         assignTag(request.userId(), level.label());
+        enqueueAdminRegistrationNotifications(user, responses);
 
-        addMessage(responses, request.userId(),
-            "Вы успешно зарегистрированы на курс по таджвиду!\n"
-                + "Вся информация о занятиях, ссылки и материалы будут публиковаться в Telegram-канале.\n"
-                + "Пожалуйста, подпишитесь на канал курса и затем нажмите кнопку проверки ниже.",
-            urlButton("Канал по курсу", properties.getCourseChannelUrl()),
-            callbackButton("Проверить подписку", FLOW1_COURSE_RECHECK));
+        addMessage(responses, request.userId(), registrationCompletedMessage(),
+            urlButton("Канал по курсу", properties.getCourseChannelUrl()));
 
-        context.setCurrentStep(FlowStep.FLOW1_WAIT_COURSE_SUBSCRIPTION_RECHECK);
+        scheduleReferralProgramAnnouncement(request.userId(), context, responses,
+            FlowStep.FLOW1_WAIT_REFERRAL_PROGRAM_ANNOUNCEMENT);
     }
 
     private void handleFlow4ReadingLevel(BotUpdateRequest request,
@@ -621,19 +644,16 @@ public class BotFlowService {
 
         context.setReadingLevel(level);
         addTempTag(context, level.label());
-        upsertReferralUser(request.userId(), context);
+        UserEntity user = upsertReferralUser(request.userId(), context);
         flushTempTagsToUser(request.userId(), context);
         assignTag(request.userId(), level.label());
+        enqueueAdminRegistrationNotifications(user, responses);
 
-        addMessage(responses, request.userId(),
-            "Вы успешно зарегистрированы на курс по таджвиду!\n"
-                + "Вся информация о занятиях, ссылки и материалы будут публиковаться в Telegram-канале.\n"
-                + "Подпишитесь на канал курса, дальше бот проверит подписку автоматически.\n"
-                + "Если автоматическая проверка не сработает, нажмите кнопку проверки ниже.",
-            urlButton("Канал по курсу", properties.getCourseChannelUrl()),
-            callbackButton("Проверить подписку", FLOW4_COURSE_CLICK_CONFIRMED));
+        addMessage(responses, request.userId(), registrationCompletedMessage(),
+            urlButton("Канал по курсу", properties.getCourseChannelUrl()));
 
-        context.setCurrentStep(FlowStep.FLOW4_WAIT_COURSE_LINK_CONFIRM);
+        scheduleReferralProgramAnnouncement(request.userId(), context, responses,
+            FlowStep.FLOW4_WAIT_REFERRAL_PROGRAM_ANNOUNCEMENT);
     }
 
     private void confirmCourseSubscriptionAndProcessReferral(long userId,
@@ -666,7 +686,7 @@ public class BotFlowService {
             );
 
             ReferralProcessResult result = referralBonusService.processReferralEvent(payload);
-            if (result.payloadValid() && result.alreadyCounted() && result.newlyCounted()) {
+            if (result.payloadValid() && result.newlyCounted()) {
                 addMessage(responses, referrerUserId,
                     "+1 к общей копилке 🔥\n"
                         + "Общее кол-во приглашенных друзей: " + result.referralPoints() + ".");
@@ -730,88 +750,122 @@ public class BotFlowService {
 
         if (flow4Variant) {
             addMessage(responses, userId,
-                "Рад знакомству, " + context.getUserName() + ", идем дальше.");
+                "Рад знакомству, " + context.getUserName() + "! Идём дальше 😊");
         } else {
             addMessage(responses, userId,
-                "Рад знакомству, " + context.getUserName() + "! Идём дальше.");
+                "Рад знакомству, " + context.getUserName() + "! Идём дальше 😊");
         }
 
         addMessage(responses, userId,
-            "Есть ли у вас дети?\n"
-                + "Укажите количество детей числом от 0 до " + MAX_CHILDREN_COUNT + ".");
+            "Есть ли у вас дети? 👶",
+            callbackButton("Да", flow4Variant ? FLOW4_HAS_CHILDREN_YES : FLOW1_HAS_CHILDREN_YES),
+            callbackButton("Нет", flow4Variant ? FLOW4_HAS_CHILDREN_NO : FLOW1_HAS_CHILDREN_NO));
     }
 
-    private void handleChildrenCountInput(long userId,
-                                          FlowContextEntity context,
-                                          String text,
-                                          List<BotMessageResponse> responses,
-                                          FlowStep childAgeStep,
-                                          FlowStep phoneStep) {
-        Integer childrenCount = parseChildrenCount(text);
-        if (childrenCount == null) {
+    private void handleHasChildrenInput(long userId,
+                                        FlowContextEntity context,
+                                        String text,
+                                        List<BotMessageResponse> responses,
+                                        FlowStep childrenStudyStep,
+                                        FlowStep phoneStep) {
+        Boolean hasChildren = parseYesNo(text);
+        if (hasChildren == null) {
             addMessage(responses, userId,
-                "Пожалуйста, укажите количество детей числом от 0 до " + MAX_CHILDREN_COUNT + ".");
+                "Пожалуйста, выберите один из вариантов ниже 👇",
+                callbackButton("Да", childrenStudyStep == FlowStep.FLOW1_WAIT_CHILDREN_QURAN_STUDY
+                    ? FLOW1_HAS_CHILDREN_YES
+                    : FLOW4_HAS_CHILDREN_YES),
+                callbackButton("Нет", childrenStudyStep == FlowStep.FLOW1_WAIT_CHILDREN_QURAN_STUDY
+                    ? FLOW1_HAS_CHILDREN_NO
+                    : FLOW4_HAS_CHILDREN_NO));
             return;
         }
 
-        context.setChildrenCount(childrenCount);
-        context.setChildrenAges(null);
-        context.setChildrenStudyQuran(null);
-        context.setChildrenAgeIndex(null);
+        finalizeHasChildrenInput(userId, context, responses, hasChildren, childrenStudyStep, phoneStep,
+            childrenStudyStep == FlowStep.FLOW1_WAIT_CHILDREN_QURAN_STUDY
+                ? FLOW1_CHILDREN_STUDY_YES
+                : FLOW4_CHILDREN_STUDY_YES,
+            childrenStudyStep == FlowStep.FLOW1_WAIT_CHILDREN_QURAN_STUDY
+                ? FLOW1_CHILDREN_STUDY_NO
+                : FLOW4_CHILDREN_STUDY_NO);
+    }
 
-        if (childrenCount == 0) {
+    private void handleLegacyChildAgeInput(long userId,
+                                           FlowContextEntity context,
+                                           List<BotMessageResponse> responses,
+                                           FlowStep childrenStudyStep,
+                                           String yesCallback,
+                                           String noCallback) {
+        context.setHasChildren(true);
+        context.setChildrenCount(null);
+        context.setChildrenAges(null);
+        context.setChildrenAgeIndex(null);
+        context.setCurrentStep(childrenStudyStep);
+        askChildrenStudyQuestion(userId, responses, yesCallback, noCallback);
+    }
+
+    private void onFlow1HasChildren(BotUpdateRequest request,
+                                    FlowContextEntity context,
+                                    List<BotMessageResponse> responses,
+                                    boolean hasChildren) {
+        if (context.getCurrentStep() != FlowStep.FLOW1_WAIT_HAS_CHILDREN
+            && context.getCurrentStep() != FlowStep.FLOW1_WAIT_CHILDREN_COUNT) {
+            return;
+        }
+        finalizeHasChildrenInput(
+            request.userId(),
+            context,
+            responses,
+            hasChildren,
+            FlowStep.FLOW1_WAIT_CHILDREN_QURAN_STUDY,
+            FlowStep.FLOW1_WAIT_PHONE,
+            FLOW1_CHILDREN_STUDY_YES,
+            FLOW1_CHILDREN_STUDY_NO
+        );
+    }
+
+    private void onFlow4HasChildren(BotUpdateRequest request,
+                                    FlowContextEntity context,
+                                    List<BotMessageResponse> responses,
+                                    boolean hasChildren) {
+        if (context.getCurrentStep() != FlowStep.FLOW4_WAIT_HAS_CHILDREN
+            && context.getCurrentStep() != FlowStep.FLOW4_WAIT_CHILDREN_COUNT) {
+            return;
+        }
+        finalizeHasChildrenInput(
+            request.userId(),
+            context,
+            responses,
+            hasChildren,
+            FlowStep.FLOW4_WAIT_CHILDREN_QURAN_STUDY,
+            FlowStep.FLOW4_WAIT_PHONE,
+            FLOW4_CHILDREN_STUDY_YES,
+            FLOW4_CHILDREN_STUDY_NO
+        );
+    }
+
+    private void finalizeHasChildrenInput(long userId,
+                                          FlowContextEntity context,
+                                          List<BotMessageResponse> responses,
+                                          boolean hasChildren,
+                                          FlowStep childrenStudyStep,
+                                          FlowStep phoneStep,
+                                          String yesCallback,
+                                          String noCallback) {
+        context.setHasChildren(hasChildren);
+        context.setChildrenAges(null);
+        context.setChildrenAgeIndex(null);
+        context.setChildrenCount(hasChildren ? null : 0);
+
+        if (!hasChildren) {
+            context.setChildrenStudyQuran(null);
             context.setCurrentStep(phoneStep);
             requestPhoneNumber(userId, responses);
             return;
         }
 
-        context.setChildrenAgeIndex(1);
-        context.setCurrentStep(childAgeStep);
-        addMessage(responses, userId, childAgePrompt(1));
-    }
-
-    private void handleChildAgeInput(long userId,
-                                     FlowContextEntity context,
-                                     String text,
-                                     List<BotMessageResponse> responses,
-                                     FlowStep childrenStudyStep,
-                                     String yesCallback,
-                                     String noCallback) {
-        Integer childrenCount = context.getChildrenCount();
-        if (childrenCount == null || childrenCount <= 0) {
-            context.setCurrentStep(childrenStudyStep == FlowStep.FLOW1_WAIT_CHILDREN_QURAN_STUDY
-                ? FlowStep.FLOW1_WAIT_CHILDREN_COUNT
-                : FlowStep.FLOW4_WAIT_CHILDREN_COUNT);
-            addMessage(responses, userId,
-                "Сначала укажите количество детей числом от 0 до " + MAX_CHILDREN_COUNT + ".");
-            return;
-        }
-
-        Integer childAgeIndex = context.getChildrenAgeIndex();
-        if (childAgeIndex == null || childAgeIndex < 1 || childAgeIndex > childrenCount) {
-            childAgeIndex = 1;
-        }
-
-        Integer childAge = parseChildAge(text);
-        if (childAge == null) {
-            addMessage(responses, userId,
-                "Пожалуйста, укажите корректный возраст " + childAgeIndex + "-го ребенка числом от "
-                    + MIN_CHILD_AGE + " до " + MAX_CHILD_AGE + ".");
-            return;
-        }
-
-        appendChildAge(context, childAge);
-
-        if (childAgeIndex >= childrenCount) {
-            context.setChildrenAgeIndex(null);
-            context.setCurrentStep(childrenStudyStep);
-            askChildrenStudyQuestion(userId, responses, yesCallback, noCallback);
-            return;
-        }
-
-        int nextChildAgeIndex = childAgeIndex + 1;
-        context.setChildrenAgeIndex(nextChildAgeIndex);
-        addMessage(responses, userId, childAgePrompt(nextChildAgeIndex));
+        context.setCurrentStep(childrenStudyStep);
+        askChildrenStudyQuestion(userId, responses, yesCallback, noCallback);
     }
 
     private void onFlow1ChildrenStudy(BotUpdateRequest request,
@@ -819,8 +873,6 @@ public class BotFlowService {
                                       List<BotMessageResponse> responses,
                                       boolean childrenStudyQuran) {
         if (context.getCurrentStep() != FlowStep.FLOW1_WAIT_CHILDREN_QURAN_STUDY) {
-            addMessage(responses, request.userId(),
-                "Нажмите /start, чтобы начать регистрацию заново.");
             return;
         }
 
@@ -832,8 +884,6 @@ public class BotFlowService {
                                       List<BotMessageResponse> responses,
                                       boolean childrenStudyQuran) {
         if (context.getCurrentStep() != FlowStep.FLOW4_WAIT_CHILDREN_QURAN_STUDY) {
-            addMessage(responses, request.userId(),
-                "Нажмите /start, чтобы начать регистрацию заново.");
             return;
         }
 
@@ -864,6 +914,10 @@ public class BotFlowService {
                                             List<BotMessageResponse> responses,
                                             boolean childrenStudyQuran,
                                             FlowStep nextStep) {
+        context.setHasChildren(true);
+        context.setChildrenCount(null);
+        context.setChildrenAges(null);
+        context.setChildrenAgeIndex(null);
         context.setChildrenStudyQuran(childrenStudyQuran);
         context.setCurrentStep(nextStep);
 
@@ -874,28 +928,15 @@ public class BotFlowService {
                                           List<BotMessageResponse> responses,
                                           String yesCallback,
                                           String noCallback) {
-        addMessage(responses, userId, "Изучают ли они Коран?",
+        addMessage(responses, userId, "Изучают ли они Коран? 📖",
             callbackButton("Да", yesCallback),
             callbackButton("Нет", noCallback));
     }
 
-    private String childAgePrompt(int childAgeIndex) {
-        return "Укажите возраст " + childAgeIndex + "-го ребенка.";
-    }
-
     private void requestPhoneNumber(long userId, List<BotMessageResponse> responses) {
         addMessage(responses, userId,
-            "Отправьте номер телефона через кнопку ниже.",
+            "Отправьте номер телефона через кнопку ниже 📱",
             requestContactButton("Отправить номер"));
-    }
-
-    private void appendChildAge(FlowContextEntity context, int childAge) {
-        String current = context.getChildrenAges();
-        if (current == null || current.isBlank()) {
-            context.setChildrenAges(String.valueOf(childAge));
-            return;
-        }
-        context.setChildrenAges(current + "," + childAge);
     }
 
     private void askReadingLevel(long userId,
@@ -915,7 +956,7 @@ public class BotFlowService {
                                     List<BotMessageResponse> responses,
                                     String callback) {
         addMessage(responses, userId,
-            "Пусть Аллах облегчит вам обучение.\n"
+            "Пусть Аллах облегчит вам обучение 🤍\n"
                 + "Продолжая работу с ботом, вы даете согласие на обработку персональных данных.",
             callbackButton("Продолжить", callback));
     }
@@ -925,21 +966,322 @@ public class BotFlowService {
                             List<BotMessageResponse> responses) {
         context.setCurrentStep(FlowStep.FLOW2_WAIT_TERMS);
         addMessage(responses, userId,
-            "Вы записались — альхамдулиллях.\n"
-                + "Теперь приглашайте друзей и получайте награду за каждого.\n"
-                + "Нажмите кнопку ниже, чтобы узнать условия и получить свою ссылку.",
+            "Вы записались — альхамдулиллях 🤍\n"
+                + "Теперь приглашайте друзей и получайте награду за каждого! 🔥\n"
+                + "Нажмите кнопку ниже, чтобы узнать условия и получить свою ссылку 👇",
             callbackButton("Условия", FLOW2_TERMS));
     }
 
-    private void upsertNormalUser(long userId, FlowContextEntity context) {
+    private String registrationCompletedMessage() {
+        return "✅ Вы успешно зарегистрированы на курс по таджвиду!\n"
+            + "Вся информация о занятиях, ссылки и материалы будут публиковаться в Telegram-канале.\n"
+            + "Подпишитесь на канал курса.";
+    }
+
+    private void scheduleReferralProgramAnnouncement(long userId,
+                                                     FlowContextEntity context,
+                                                     List<BotMessageResponse> responses,
+                                                     FlowStep waitingStep) {
+        Duration delay = properties.getFlow1ToFlow2Delay();
+        if (delay == null || delay.isNegative()) {
+            delay = Duration.ZERO;
+        }
+
+        if (delay.isZero()) {
+            if (confirmCourseSubscriptionIfPresent(
+                userId,
+                responses,
+                "course_channel_check_before_flow2_zero_delay")) {
+                context.setReferralAnnouncementDueAt(null);
+                context.setReferralAnnouncementSent(true);
+                startFlow2(userId, context, responses);
+                return;
+            }
+            context.setCurrentStep(waitingStep);
+            context.setReferralAnnouncementDueAt(Instant.now().plus(resolveAutomationRetryDelay()));
+            context.setReferralAnnouncementSent(false);
+            return;
+        }
+
+        context.setCurrentStep(waitingStep);
+        context.setReferralAnnouncementDueAt(Instant.now().plus(delay));
+        context.setReferralAnnouncementSent(false);
+    }
+
+    private void processDueReferralAnnouncements(Instant now, List<BotMessageResponse> responses) {
+        List<FlowContextEntity> dueContexts =
+            flowContextRepository.findByReferralAnnouncementSentFalseAndReferralAnnouncementDueAtLessThanEqual(now);
+        for (FlowContextEntity context : dueContexts) {
+            if (!isWaitingForReferralProgramAnnouncement(context.getCurrentStep())) {
+                context.setReferralAnnouncementDueAt(null);
+                context.setReferralAnnouncementSent(true);
+                flowContextRepository.save(context);
+                continue;
+            }
+
+            if (!confirmCourseSubscriptionIfPresent(
+                context.getUserId(),
+                responses,
+                "course_channel_check_before_flow2_scheduled")) {
+                context.setReferralAnnouncementDueAt(now.plus(resolveAutomationRetryDelay()));
+                context.setReferralAnnouncementSent(false);
+                flowContextRepository.save(context);
+                continue;
+            }
+
+            startFlow2(context.getUserId(), context, responses);
+            context.setReferralAnnouncementDueAt(null);
+            context.setReferralAnnouncementSent(true);
+            flowContextRepository.save(context);
+        }
+    }
+
+    private boolean confirmCourseSubscriptionIfPresent(long userId,
+                                                       List<BotMessageResponse> responses,
+                                                       String triggerSource) {
+        SubscriptionCheckResult result = channelSubscriptionService.checkCourseChannelSubscription(userId);
+        if (result != SubscriptionCheckResult.SUBSCRIBED) {
+            return false;
+        }
+        confirmCourseSubscriptionAndProcessReferral(userId, null, responses, triggerSource);
+        return true;
+    }
+
+    private Duration resolveAutomationRetryDelay() {
+        Duration retryDelay = properties.getAutomationTickDelay();
+        if (retryDelay == null || retryDelay.isNegative() || retryDelay.isZero()) {
+            return Duration.ofSeconds(30);
+        }
+        return retryDelay;
+    }
+
+    private boolean isWaitingForReferralProgramAnnouncement(FlowStep step) {
+        return step == FlowStep.FLOW1_WAIT_REFERRAL_PROGRAM_ANNOUNCEMENT
+            || step == FlowStep.FLOW4_WAIT_REFERRAL_PROGRAM_ANNOUNCEMENT;
+    }
+
+    private void processPendingReferralAwards(List<BotMessageResponse> responses) {
+        List<UserEntity> pendingInvitees =
+            userRepository.findAllByReferralStatusAndRegistrationCompletedTrue(ReferralStatus.PENDING);
+
+        for (UserEntity invitee : pendingInvitees) {
+            if (invitee.getReferrerUserId() <= 0) {
+                continue;
+            }
+
+            boolean subscribed = invitee.isCourseChannelSubscribed();
+            if (!subscribed) {
+                SubscriptionCheckResult result =
+                    channelSubscriptionService.checkCourseChannelSubscription(invitee.getUserId());
+                if (result != SubscriptionCheckResult.SUBSCRIBED) {
+                    continue;
+                }
+            }
+
+            FlowContextEntity context = flowContextRepository.findByUserId(invitee.getUserId()).orElse(null);
+            confirmCourseSubscriptionAndProcessReferral(
+                invitee.getUserId(),
+                context,
+                responses,
+                "course_channel_periodic_recheck"
+            );
+        }
+    }
+
+    private void enqueueAdminRegistrationNotifications(UserEntity user, List<BotMessageResponse> responses) {
+        TajwidBotProperties.RegistrationNotificationsProperties notifications = properties.getRegistrationNotifications();
+        if (notifications == null || !notifications.isEnabled() || user == null) {
+            return;
+        }
+
+        Set<Long> recipientIds = resolveNotificationRecipients(notifications);
+        if (recipientIds.isEmpty()) {
+            return;
+        }
+
+        String inviterLabel = buildInviterLabel(user.getReferrerUserId());
+        String levelLabel = user.getReadingLevel() == null ? "Не указан" : user.getReadingLevel().label();
+        String hasChildrenLabel = toYesNo(resolveHasChildren(user));
+        String telegramUsernameLabel = formatTelegramUsername(user.getTelegramUsername());
+
+        String message = "🆕 Новая регистрация\n\n"
+            + "👤 Имя: " + fallback(user.getUserName(), user.getTelegramFirstName(), "Не указано") + "\n"
+            + "🎂 Возраст: " + fallback(user.getAge()) + "\n"
+            + "📨 Telegram: " + telegramUsernameLabel + "\n"
+            + "📱 Телефон: " + fallback(user.getPhone()) + "\n"
+            + "👨‍👩‍👧 Дети: " + hasChildrenLabel + "\n"
+            + "📖 Уровень: " + levelLabel + "\n"
+            + "🤝 Кто пригласил: " + inviterLabel;
+
+        for (Long recipientId : recipientIds) {
+            addMessage(responses, recipientId, message);
+        }
+    }
+
+    private Set<Long> resolveNotificationRecipients(TajwidBotProperties.RegistrationNotificationsProperties notifications) {
+        Set<Long> recipients = new HashSet<>();
+
+        for (String rawId : defaultIfNull(notifications.getAdminUserIds())) {
+            if (rawId == null || rawId.isBlank()) {
+                continue;
+            }
+            try {
+                recipients.add(Long.parseLong(rawId.trim()));
+            } catch (NumberFormatException ignored) {
+                log.warn("Invalid TAJWID_REGISTRATION_NOTIFICATIONS_ADMIN_USER_IDS entry: '{}'", rawId);
+            }
+        }
+
+        Set<String> usernames = normalizeUsernames(defaultIfNull(notifications.getAdminUsernames()));
+        List<RegistrationNotificationAdminEntity> dbAdmins = registrationNotificationAdminRepository.findByActiveTrue();
+        for (RegistrationNotificationAdminEntity admin : dbAdmins) {
+            if (admin.getTelegramUserId() != null && admin.getTelegramUserId() > 0) {
+                recipients.add(admin.getTelegramUserId());
+            }
+            String username = normalizeUsername(admin.getTelegramUsername());
+            if (username != null) {
+                usernames.add(username.toLowerCase(Locale.ROOT));
+            }
+        }
+
+        if (usernames.isEmpty()) {
+            usernames.add(DEFAULT_ADMIN_USERNAME.toLowerCase(Locale.ROOT));
+        }
+        if (!usernames.isEmpty()) {
+            recipients.addAll(userRepository.findUserIdsByTelegramUsernameIn(usernames));
+            recipients.addAll(flowContextRepository.findUserIdsByTelegramUsernameIn(usernames));
+        }
+
+        recipients.addAll(bindAdminUserIdsFromUsername(dbAdmins));
+        return recipients;
+    }
+
+    private Set<Long> bindAdminUserIdsFromUsername(List<RegistrationNotificationAdminEntity> dbAdmins) {
+        Set<Long> resolvedIds = new HashSet<>();
+        for (RegistrationNotificationAdminEntity admin : dbAdmins) {
+            if (admin.getTelegramUserId() != null && admin.getTelegramUserId() > 0) {
+                resolvedIds.add(admin.getTelegramUserId());
+                continue;
+            }
+
+            String username = normalizeUsername(admin.getTelegramUsername());
+            if (username == null) {
+                continue;
+            }
+
+            Long resolvedUserId = resolveUserIdByUsername(username);
+            if (resolvedUserId == null || resolvedUserId <= 0) {
+                continue;
+            }
+
+            admin.setTelegramUserId(resolvedUserId);
+            registrationNotificationAdminRepository.save(admin);
+            resolvedIds.add(resolvedUserId);
+        }
+        return resolvedIds;
+    }
+
+    private Long resolveUserIdByUsername(String username) {
+        Optional<UserEntity> user = userRepository.findByTelegramUsernameIgnoreCase(username);
+        if (user.isPresent() && user.get().getUserId() != null) {
+            return user.get().getUserId();
+        }
+        return flowContextRepository.findByTelegramUsernameIgnoreCase(username)
+            .map(FlowContextEntity::getUserId)
+            .orElse(null);
+    }
+
+    private Set<String> normalizeUsernames(Collection<String> rawUsernames) {
+        Set<String> result = new HashSet<>();
+        if (rawUsernames == null) {
+            return result;
+        }
+        for (String raw : rawUsernames) {
+            String normalized = normalizeUsername(raw);
+            if (normalized != null) {
+                result.add(normalized.toLowerCase(Locale.ROOT));
+            }
+        }
+        return result;
+    }
+
+    private String buildInviterLabel(long referrerUserId) {
+        if (referrerUserId <= 0) {
+            return "Нет";
+        }
+
+        Optional<UserEntity> maybeReferrer = userRepository.findByUserId(referrerUserId);
+        if (maybeReferrer.isEmpty()) {
+            return String.valueOf(referrerUserId);
+        }
+
+        UserEntity referrer = maybeReferrer.get();
+        if (referrer.getTelegramUsername() != null && !referrer.getTelegramUsername().isBlank()) {
+            return "@" + referrer.getTelegramUsername() + " (" + referrerUserId + ")";
+        }
+
+        return fallback(referrer.getUserName(), referrer.getTelegramFirstName(), String.valueOf(referrerUserId))
+            + " (" + referrerUserId + ")";
+    }
+
+    private Boolean resolveHasChildren(UserEntity user) {
+        if (user.getHasChildren() != null) {
+            return user.getHasChildren();
+        }
+        Integer childrenCount = user.getChildrenCount();
+        if (childrenCount == null) {
+            return null;
+        }
+        return childrenCount > 0;
+    }
+
+    private String toYesNo(Boolean value) {
+        if (Boolean.TRUE.equals(value)) {
+            return "Да";
+        }
+        if (Boolean.FALSE.equals(value)) {
+            return "Нет";
+        }
+        return "Не указано";
+    }
+
+    private String formatTelegramUsername(String telegramUsername) {
+        String normalized = normalizeUsername(telegramUsername);
+        if (normalized == null) {
+            return "Не указан";
+        }
+        return "@" + normalized;
+    }
+
+    private List<String> defaultIfNull(List<String> values) {
+        return values == null ? List.of() : values;
+    }
+
+    private String fallback(Object value) {
+        return value == null ? "Не указано" : String.valueOf(value);
+    }
+
+    private String fallback(String first, String second, String fallback) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        if (second != null && !second.isBlank()) {
+            return second;
+        }
+        return fallback;
+    }
+
+    private UserEntity upsertNormalUser(long userId, FlowContextEntity context) {
         UserEntity user = userRepository.findByUserId(userId).orElseGet(UserEntity::new);
         if (user.getUserId() == null) {
             user.setUserId(userId);
         }
 
         user.setTelegramFirstName(context.getTelegramFirstName());
+        user.setTelegramUsername(context.getTelegramUsername());
         user.setUserName(context.getUserName());
         user.setAge(context.getAge());
+        user.setHasChildren(context.getHasChildren());
         user.setChildrenCount(context.getChildrenCount());
         user.setChildrenAges(context.getChildrenAges());
         user.setChildrenStudyQuran(context.getChildrenStudyQuran());
@@ -954,18 +1296,20 @@ public class BotFlowService {
         user.setReferralStatus(ReferralStatus.NOT_APPLICABLE);
         user.setReferralCountedAt(Instant.EPOCH);
 
-        userRepository.save(user);
+        return userRepository.save(user);
     }
 
-    private void upsertReferralUser(long userId, FlowContextEntity context) {
+    private UserEntity upsertReferralUser(long userId, FlowContextEntity context) {
         UserEntity user = userRepository.findByUserId(userId).orElseGet(UserEntity::new);
         if (user.getUserId() == null) {
             user.setUserId(userId);
         }
 
         user.setTelegramFirstName(context.getTelegramFirstName());
+        user.setTelegramUsername(context.getTelegramUsername());
         user.setUserName(context.getUserName());
         user.setAge(context.getAge());
+        user.setHasChildren(context.getHasChildren());
         user.setChildrenCount(context.getChildrenCount());
         user.setChildrenAges(context.getChildrenAges());
         user.setChildrenStudyQuran(context.getChildrenStudyQuran());
@@ -980,7 +1324,7 @@ public class BotFlowService {
         user.setReferralStatus(ReferralStatus.PENDING);
         user.setReferralCountedAt(Instant.EPOCH);
 
-        userRepository.save(user);
+        return userRepository.save(user);
     }
 
     private void addTempTag(FlowContextEntity context, String tag) {
@@ -1053,30 +1397,6 @@ public class BotFlowService {
         }
     }
 
-    private Integer parseChildrenCount(String text) {
-        try {
-            int count = Integer.parseInt(text.trim());
-            if (count < 0 || count > MAX_CHILDREN_COUNT) {
-                return null;
-            }
-            return count;
-        } catch (NumberFormatException ex) {
-            return null;
-        }
-    }
-
-    private Integer parseChildAge(String text) {
-        try {
-            int age = Integer.parseInt(text.trim());
-            if (age < MIN_CHILD_AGE || age > MAX_CHILD_AGE) {
-                return null;
-            }
-            return age;
-        } catch (NumberFormatException ex) {
-            return null;
-        }
-    }
-
     private Boolean parseYesNo(String text) {
         if (text == null || text.isBlank()) {
             return null;
@@ -1116,6 +1436,17 @@ public class BotFlowService {
         return trimmed;
     }
 
+    private String normalizeUsername(String value) {
+        String normalized = normalize(value);
+        if (normalized == null) {
+            return null;
+        }
+        if (normalized.startsWith("@")) {
+            normalized = normalized.substring(1);
+        }
+        return normalized.isBlank() ? null : normalized;
+    }
+
     private void resetContext(FlowContextEntity context,
                               long userId,
                               String firstName,
@@ -1126,6 +1457,7 @@ public class BotFlowService {
         context.setCurrentStep(FlowStep.IDLE);
         context.setUserName(null);
         context.setAge(null);
+        context.setHasChildren(null);
         context.setChildrenCount(null);
         context.setChildrenAges(null);
         context.setChildrenStudyQuran(null);
@@ -1138,12 +1470,16 @@ public class BotFlowService {
         context.setReferralEntrySource(null);
         context.setReferralEntryAt(null);
         context.setTempTags(null);
+        context.setReferralAnnouncementDueAt(null);
+        context.setReferralAnnouncementSent(false);
     }
 
     private void setIdleContext(FlowContextEntity context) {
         context.setCurrentStep(FlowStep.IDLE);
         context.setFlowType(FlowType.NORMAL);
         context.setReferrerUserId(0);
+        context.setReferralAnnouncementDueAt(null);
+        context.setReferralAnnouncementSent(false);
     }
 
     private FlowContextEntity createDefaultContext(long userId, String firstName) {
@@ -1153,6 +1489,7 @@ public class BotFlowService {
         context.setFlowType(FlowType.NORMAL);
         context.setCurrentStep(FlowStep.IDLE);
         context.setReferrerUserId(0);
+        context.setReferralAnnouncementSent(false);
         return context;
     }
 

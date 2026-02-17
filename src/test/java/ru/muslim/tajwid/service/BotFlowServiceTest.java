@@ -2,6 +2,7 @@ package ru.muslim.tajwid.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,10 +20,10 @@ import ru.muslim.tajwid.repository.FlowContextRepository;
 import ru.muslim.tajwid.repository.ReferralLinkUsageRepository;
 import ru.muslim.tajwid.repository.UserRepository;
 import ru.muslim.tajwid.repository.UserTagRepository;
-import ru.muslim.tajwid.web.dto.ButtonType;
 import ru.muslim.tajwid.web.dto.BotContactPayload;
 import ru.muslim.tajwid.web.dto.BotUpdateRequest;
 import ru.muslim.tajwid.web.dto.BotUpdateResult;
+import ru.muslim.tajwid.web.dto.ButtonType;
 import ru.muslim.tajwid.support.PostgresContainerTestBase;
 
 @SpringBootTest
@@ -30,14 +31,15 @@ class BotFlowServiceTest extends PostgresContainerTestBase {
 
     private static final String FLOW1_INTRO_CONTINUE = "FLOW1_INTRO_CONTINUE";
     private static final String FLOW1_CONSENT_CONTINUE = "FLOW1_CONSENT_CONTINUE";
+    private static final String FLOW1_HAS_CHILDREN_NO = "FLOW1_HAS_CHILDREN:NO";
+    private static final String FLOW1_HAS_CHILDREN_YES = "FLOW1_HAS_CHILDREN:YES";
     private static final String FLOW1_CHILDREN_STUDY_NO = "FLOW1_CHILDREN_STUDY:NO";
-    private static final String FLOW1_COURSE_RECHECK = "FLOW1_COURSE_RECHECK";
     private static final String FLOW2_TERMS = "FLOW2_TERMS";
     private static final String FLOW2_SHOW_LINK = "FLOW2_SHOW_LINK";
     private static final String FLOW3_SCHOOL_RECHECK = "FLOW3_SCHOOL_RECHECK";
     private static final String FLOW3_CONSENT_CONTINUE = "FLOW3_CONSENT_CONTINUE";
+    private static final String FLOW4_HAS_CHILDREN_YES = "FLOW4_HAS_CHILDREN:YES";
     private static final String FLOW4_CHILDREN_STUDY_YES = "FLOW4_CHILDREN_STUDY:YES";
-    private static final String FLOW4_COURSE_CLICK_CONFIRMED = "FLOW4_COURSE_CLICK_CONFIRMED";
 
     @Autowired
     private BotFlowService botFlowService;
@@ -81,21 +83,15 @@ class BotFlowServiceTest extends PostgresContainerTestBase {
         send(userId, "Ali", null, FLOW1_CONSENT_CONTINUE, null);
         send(userId, "Ali", "Али", null, null);
         send(userId, "Ali", "22", null, null);
-        send(userId, "Ali", "2", null, null);
-        send(userId, "Ali", "7", null, null);
-        send(userId, "Ali", "10", null, null);
-        send(userId, "Ali", null, FLOW1_CHILDREN_STUDY_NO, null);
+        send(userId, "Ali", null, FLOW1_HAS_CHILDREN_NO, null);
         send(userId, "Ali", null, null, new BotContactPayload(userId, "+79990000000"));
 
         BotUpdateResult afterReadingLevel = send(userId, "Ali", null,
             "FLOW1_LEVEL:START_FROM_ZERO", null);
-        assertThat(afterReadingLevel.messages()).hasSize(1);
+        assertThat(afterReadingLevel.messages()).hasSize(2);
         assertThat(afterReadingLevel.messages().getFirst().text())
             .contains("Вы успешно зарегистрированы на курс по таджвиду");
-
-        BotUpdateResult afterCourseCheck = send(userId, "Ali", null, FLOW1_COURSE_RECHECK, null);
-        assertThat(afterCourseCheck.messages()).hasSize(1);
-        assertThat(afterCourseCheck.messages().getFirst().text())
+        assertThat(afterReadingLevel.messages().get(1).text())
             .contains("Вы записались — альхамдулиллях");
 
         send(userId, "Ali", null, FLOW2_TERMS, null);
@@ -106,16 +102,17 @@ class BotFlowServiceTest extends PostgresContainerTestBase {
             .isEqualTo("https://t.me/tajwid_test_bot?start=1");
 
         UserEntity user = userRepository.findByUserId(userId).orElseThrow();
-        assertThat(user.getChildrenCount()).isEqualTo(2);
-        assertThat(user.getChildrenAges()).isEqualTo("7,10");
-        assertThat(user.getChildrenStudyQuran()).isFalse();
-        assertThat(user.isCourseChannelSubscribed()).isTrue();
+        assertThat(user.getHasChildren()).isFalse();
+        assertThat(user.getChildrenCount()).isEqualTo(0);
+        assertThat(user.getChildrenAges()).isNull();
+        assertThat(user.getChildrenStudyQuran()).isNull();
+        assertThat(user.isCourseChannelSubscribed()).isFalse();
         assertThat(user.getReferralStatus()).isEqualTo(ReferralStatus.NOT_APPLICABLE);
         assertThat(userTagRepository.existsByUserIdAndTag(userId, "Рефер получил ссылку")).isTrue();
     }
 
     @Test
-    void childrenCountIsLimitedToTen() {
+    void childrenQuestionUsesYesNoButtons() {
         long userId = 11L;
         subscriptionService.setSubscriptionState(userId, true, true);
 
@@ -123,19 +120,18 @@ class BotFlowServiceTest extends PostgresContainerTestBase {
         send(userId, "Ali", null, FLOW1_INTRO_CONTINUE, null);
         send(userId, "Ali", null, FLOW1_CONSENT_CONTINUE, null);
         send(userId, "Ali", "Али", null, null);
-        send(userId, "Ali", "22", null, null);
 
-        BotUpdateResult invalidChildrenCount = send(userId, "Ali", "11", null, null);
-        assertThat(invalidChildrenCount.messages()).hasSize(1);
-        assertThat(invalidChildrenCount.messages().getFirst().text())
-            .contains("от 0 до 10");
+        BotUpdateResult afterAge = send(userId, "Ali", "22", null, null);
 
-        assertThat(flowContextRepository.findByUserId(userId).orElseThrow().getCurrentStep())
-            .isEqualTo(FlowStep.FLOW1_WAIT_CHILDREN_COUNT);
+        assertThat(afterAge.messages()).hasSize(2);
+        assertThat(afterAge.messages().get(1).text()).contains("Есть ли у вас дети?");
+        assertThat(afterAge.messages().get(1).buttons())
+            .extracting(button -> button.value())
+            .containsExactly(FLOW1_HAS_CHILDREN_YES, FLOW1_HAS_CHILDREN_NO);
     }
 
     @Test
-    void zeroChildrenSkipsQuranQuestionAndRequestsPhone() {
+    void hasChildrenNoSkipsQuranQuestionAndRequestsPhone() {
         long userId = 13L;
         subscriptionService.setSubscriptionState(userId, true, true);
 
@@ -145,23 +141,23 @@ class BotFlowServiceTest extends PostgresContainerTestBase {
         send(userId, "Ali", "Али", null, null);
         send(userId, "Ali", "22", null, null);
 
-        BotUpdateResult afterChildrenCount = send(userId, "Ali", "0", null, null);
-        assertThat(afterChildrenCount.messages()).hasSize(1);
-        assertThat(afterChildrenCount.messages().getFirst().text())
-            .contains("Отправьте номер телефона через кнопку ниже.")
+        BotUpdateResult afterHasChildren = send(userId, "Ali", null, FLOW1_HAS_CHILDREN_NO, null);
+        assertThat(afterHasChildren.messages()).hasSize(1);
+        assertThat(afterHasChildren.messages().getFirst().text())
+            .contains("Отправьте номер телефона через кнопку ниже")
             .doesNotContain("Изучают ли они Коран");
-        assertThat(afterChildrenCount.messages().getFirst().buttons())
+        assertThat(afterHasChildren.messages().getFirst().buttons())
             .hasSize(1)
             .anyMatch(button -> button.type() == ButtonType.REQUEST_CONTACT);
 
         FlowContextEntity context = flowContextRepository.findByUserId(userId).orElseThrow();
         assertThat(context.getCurrentStep()).isEqualTo(FlowStep.FLOW1_WAIT_PHONE);
-        assertThat(context.getChildrenCount()).isEqualTo(0);
+        assertThat(context.getHasChildren()).isFalse();
         assertThat(context.getChildrenStudyQuran()).isNull();
     }
 
     @Test
-    void childAgePromptsUseHyphenConsistently() {
+    void hasChildrenYesAsksQuranQuestion() {
         long userId = 14L;
         subscriptionService.setSubscriptionState(userId, true, true);
 
@@ -171,15 +167,34 @@ class BotFlowServiceTest extends PostgresContainerTestBase {
         send(userId, "Ali", "Али", null, null);
         send(userId, "Ali", "22", null, null);
 
-        BotUpdateResult afterChildrenCount = send(userId, "Ali", "2", null, null);
-        assertThat(afterChildrenCount.messages()).hasSize(1);
-        assertThat(afterChildrenCount.messages().getFirst().text())
-            .isEqualTo("Укажите возраст 1-го ребенка.");
+        BotUpdateResult afterHasChildren = send(userId, "Ali", null, FLOW1_HAS_CHILDREN_YES, null);
+        assertThat(afterHasChildren.messages()).hasSize(1);
+        assertThat(afterHasChildren.messages().getFirst().text()).contains("Изучают ли они Коран");
 
-        BotUpdateResult afterFirstChildAge = send(userId, "Ali", "7", null, null);
-        assertThat(afterFirstChildAge.messages()).hasSize(1);
-        assertThat(afterFirstChildAge.messages().getFirst().text())
-            .isEqualTo("Укажите возраст 2-го ребенка.");
+        BotUpdateResult afterStudy = send(userId, "Ali", null, FLOW1_CHILDREN_STUDY_NO, null);
+        assertThat(afterStudy.messages()).hasSize(1);
+        assertThat(afterStudy.messages().getFirst().text()).contains("Отправьте номер телефона");
+
+        FlowContextEntity context = flowContextRepository.findByUserId(userId).orElseThrow();
+        assertThat(context.getHasChildren()).isTrue();
+        assertThat(context.getChildrenStudyQuran()).isFalse();
+    }
+
+    @Test
+    void staleConsentCallbackDoesNotInterruptFlow() {
+        long userId = 15L;
+        subscriptionService.setSubscriptionState(userId, true, true);
+
+        send(userId, "Ali", "/start", null, null);
+        send(userId, "Ali", null, FLOW1_INTRO_CONTINUE, null);
+        send(userId, "Ali", null, FLOW1_CONSENT_CONTINUE, null);
+        send(userId, "Ali", "Али", null, null);
+
+        BotUpdateResult staleCallback = send(userId, "Ali", null, FLOW1_CONSENT_CONTINUE, null);
+        assertThat(staleCallback.messages()).isEmpty();
+
+        BotUpdateResult afterAge = send(userId, "Ali", "22", null, null);
+        assertThat(afterAge.messages()).anyMatch(message -> message.text().contains("Есть ли у вас дети"));
     }
 
     @Test
@@ -227,27 +242,22 @@ class BotFlowServiceTest extends PostgresContainerTestBase {
         send(200L, "Invitee", null, FLOW3_CONSENT_CONTINUE, null);
         send(200L, "Invitee", "Осман", null, null);
         send(200L, "Invitee", "19", null, null);
-        send(200L, "Invitee", "1", null, null);
-        send(200L, "Invitee", "6", null, null);
+        send(200L, "Invitee", null, FLOW4_HAS_CHILDREN_YES, null);
         send(200L, "Invitee", null, FLOW4_CHILDREN_STUDY_YES, null);
         send(200L, "Invitee", null, null, new BotContactPayload(200L, "+79991112233"));
         send(200L, "Invitee", null, "FLOW4_LEVEL:KNOW_BASICS", null);
 
-        BotUpdateResult afterCourseClick = send(200L, "Invitee", null, FLOW4_COURSE_CLICK_CONFIRMED, null);
+        BotUpdateResult afterCourseMembershipUpdate = botFlowService.handleCourseChannelSubscriptionConfirmed(200L);
 
-        assertThat(afterCourseClick.messages())
+        assertThat(afterCourseMembershipUpdate.messages())
             .anyMatch(message -> message.recipientUserId().equals(100L)
                 && message.text().contains("+1 к общей копилке"));
-        assertThat(afterCourseClick.messages())
-            .anyMatch(message -> message.recipientUserId().equals(200L)
-                && message.text().contains("Вы записались — альхамдулиллях"));
 
         UserEntity referrer = userRepository.findByUserId(100L).orElseThrow();
         UserEntity invitee = userRepository.findByUserId(200L).orElseThrow();
 
         assertThat(referrer.getReferralPoints()).isEqualTo(1);
-        assertThat(invitee.getChildrenCount()).isEqualTo(1);
-        assertThat(invitee.getChildrenAges()).isEqualTo("6");
+        assertThat(invitee.getHasChildren()).isTrue();
         assertThat(invitee.getChildrenStudyQuran()).isTrue();
         assertThat(invitee.getReferralStatus()).isEqualTo(ReferralStatus.COUNTED);
         assertThat(invitee.isCourseChannelSubscribed()).isTrue();
@@ -258,38 +268,44 @@ class BotFlowServiceTest extends PostgresContainerTestBase {
     }
 
     @Test
-    void referralFlowAutoAwardsReferrerAfterRealCourseSubscriptionEvent() {
+    void membershipTriggerDoesNotAwardWhenCourseSubscriptionIsNotConfirmed() {
+        createReferrer(900L);
+        createInvitee(901L, 900L);
+        subscriptionService.setSubscriptionState(901L, true, false);
+
+        BotUpdateResult result = botFlowService.handleCourseChannelSubscriptionConfirmed(901L);
+
+        assertThat(result.messages())
+            .noneMatch(message -> message.recipientUserId().equals(900L)
+                && message.text().contains("+1 к общей копилке"));
+
+        UserEntity referrer = userRepository.findByUserId(900L).orElseThrow();
+        UserEntity invitee = userRepository.findByUserId(901L).orElseThrow();
+        assertThat(referrer.getReferralPoints()).isEqualTo(0);
+        assertThat(invitee.getReferralStatus()).isEqualTo(ReferralStatus.PENDING);
+        assertThat(invitee.isCourseChannelSubscribed()).isFalse();
+    }
+
+    @Test
+    void scheduledAutomationCanRecoverMissedReferralAward() {
         createReferrer(800L);
-        subscriptionService.setSubscriptionState(801L, true, false);
+        subscriptionService.setSubscriptionState(801L, true, true);
 
         send(801L, "Invitee", "/start 800", null, null);
         send(801L, "Invitee", null, FLOW3_SCHOOL_RECHECK, null);
         send(801L, "Invitee", null, FLOW3_CONSENT_CONTINUE, null);
         send(801L, "Invitee", "Осман", null, null);
         send(801L, "Invitee", "19", null, null);
-        BotUpdateResult afterChildrenCount = send(801L, "Invitee", "0", null, null);
-        assertThat(afterChildrenCount.messages()).hasSize(1);
-        assertThat(afterChildrenCount.messages().getFirst().text())
-            .contains("Отправьте номер телефона через кнопку ниже.")
-            .doesNotContain("Изучают ли они Коран");
+        send(801L, "Invitee", null, FLOW4_HAS_CHILDREN_YES, null);
+        send(801L, "Invitee", null, FLOW4_CHILDREN_STUDY_YES, null);
         send(801L, "Invitee", null, null, new BotContactPayload(801L, "+79991112233"));
-        BotUpdateResult afterReadingLevel = send(801L, "Invitee", null, "FLOW4_LEVEL:KNOW_BASICS", null);
+        send(801L, "Invitee", null, "FLOW4_LEVEL:KNOW_BASICS", null);
 
-        assertThat(afterReadingLevel.messages()).hasSize(1);
-        assertThat(afterReadingLevel.messages().getFirst().buttons())
-            .hasSize(2)
-            .anyMatch(button -> button.type() == ButtonType.URL)
-            .anyMatch(button -> button.type() == ButtonType.CALLBACK
-                && button.value().equals(FLOW4_COURSE_CLICK_CONFIRMED));
+        BotUpdateResult automationResult = botFlowService.processScheduledAutomations();
 
-        BotUpdateResult afterAutoConfirmation = botFlowService.handleCourseChannelSubscriptionConfirmed(801L);
-
-        assertThat(afterAutoConfirmation.messages())
+        assertThat(automationResult.messages())
             .anyMatch(message -> message.recipientUserId().equals(800L)
                 && message.text().contains("+1 к общей копилке"));
-        assertThat(afterAutoConfirmation.messages())
-            .anyMatch(message -> message.recipientUserId().equals(801L)
-                && message.text().contains("Вы записались — альхамдулиллях"));
 
         UserEntity referrer = userRepository.findByUserId(800L).orElseThrow();
         UserEntity invitee = userRepository.findByUserId(801L).orElseThrow();
@@ -297,9 +313,60 @@ class BotFlowServiceTest extends PostgresContainerTestBase {
         assertThat(referrer.getReferralPoints()).isEqualTo(1);
         assertThat(invitee.getReferralStatus()).isEqualTo(ReferralStatus.COUNTED);
         assertThat(invitee.isCourseChannelSubscribed()).isTrue();
-        assertThat(flowContextRepository.findByUserId(801L).orElseThrow().getCurrentStep())
-            .isEqualTo(FlowStep.FLOW2_WAIT_TERMS);
         assertThat(referralLinkUsageRepository.findByReferrerUserIdAndInviteeUserId(800L, 801L)).isPresent();
+    }
+
+    @Test
+    void flow2WaitsForCourseSubscriptionEvenAfterDelay() {
+        long userId = 21L;
+        subscriptionService.setSubscriptionState(userId, true, false);
+
+        Duration originalDelay = properties.getFlow1ToFlow2Delay();
+        try {
+            properties.setFlow1ToFlow2Delay(Duration.ofMinutes(3));
+
+            send(userId, "Ali", "/start", null, null);
+            send(userId, "Ali", null, FLOW1_INTRO_CONTINUE, null);
+            send(userId, "Ali", null, FLOW1_CONSENT_CONTINUE, null);
+            send(userId, "Ali", "Али", null, null);
+            send(userId, "Ali", "22", null, null);
+            send(userId, "Ali", null, FLOW1_HAS_CHILDREN_NO, null);
+            send(userId, "Ali", null, null, new BotContactPayload(userId, "+79990000000"));
+
+            BotUpdateResult afterReadingLevel = send(userId, "Ali", null,
+                "FLOW1_LEVEL:START_FROM_ZERO", null);
+            assertThat(afterReadingLevel.messages()).hasSize(1);
+
+            FlowContextEntity waitingContext = flowContextRepository.findByUserId(userId).orElseThrow();
+            assertThat(waitingContext.getCurrentStep()).isEqualTo(FlowStep.FLOW1_WAIT_REFERRAL_PROGRAM_ANNOUNCEMENT);
+            assertThat(waitingContext.isReferralAnnouncementSent()).isFalse();
+            assertThat(waitingContext.getReferralAnnouncementDueAt()).isNotNull();
+
+            waitingContext.setReferralAnnouncementDueAt(Instant.now().minusSeconds(1));
+            flowContextRepository.save(waitingContext);
+            BotUpdateResult withoutCourseSubscription = botFlowService.processScheduledAutomations();
+            assertThat(withoutCourseSubscription.messages())
+                .noneMatch(message -> message.recipientUserId().equals(userId)
+                    && message.text().contains("Вы записались — альхамдулиллях"));
+
+            FlowContextEntity stillWaitingContext = flowContextRepository.findByUserId(userId).orElseThrow();
+            assertThat(stillWaitingContext.getCurrentStep()).isEqualTo(FlowStep.FLOW1_WAIT_REFERRAL_PROGRAM_ANNOUNCEMENT);
+            assertThat(stillWaitingContext.isReferralAnnouncementSent()).isFalse();
+
+            subscriptionService.setSubscriptionState(userId, true, true);
+            stillWaitingContext.setReferralAnnouncementDueAt(Instant.now().minusSeconds(1));
+            flowContextRepository.save(stillWaitingContext);
+
+            BotUpdateResult afterSubscription = botFlowService.processScheduledAutomations();
+            assertThat(afterSubscription.messages())
+                .anyMatch(message -> message.recipientUserId().equals(userId)
+                    && message.text().contains("Вы записались — альхамдулиллях"));
+
+            UserEntity user = userRepository.findByUserId(userId).orElseThrow();
+            assertThat(user.isCourseChannelSubscribed()).isTrue();
+        } finally {
+            properties.setFlow1ToFlow2Delay(originalDelay);
+        }
     }
 
     @Test
@@ -312,22 +379,16 @@ class BotFlowServiceTest extends PostgresContainerTestBase {
         send(701L, "Invitee", null, FLOW3_CONSENT_CONTINUE, null);
         send(701L, "Invitee", "Осман", null, null);
         send(701L, "Invitee", "19", null, null);
-        send(701L, "Invitee", "3", null, null);
-        send(701L, "Invitee", "5", null, null);
-        send(701L, "Invitee", "8", null, null);
-        send(701L, "Invitee", "12", null, null);
+        send(701L, "Invitee", null, FLOW4_HAS_CHILDREN_YES, null);
         send(701L, "Invitee", null, FLOW4_CHILDREN_STUDY_YES, null);
         send(701L, "Invitee", null, null, new BotContactPayload(701L, "+79991112233"));
         send(701L, "Invitee", null, "FLOW4_LEVEL:KNOW_BASICS", null);
 
-        BotUpdateResult afterCourseCheck = send(701L, "Invitee", null, FLOW4_COURSE_CLICK_CONFIRMED, null);
+        BotUpdateResult automationResult = botFlowService.processScheduledAutomations();
 
-        assertThat(afterCourseCheck.messages())
+        assertThat(automationResult.messages())
             .noneMatch(message -> message.recipientUserId().equals(700L)
                 && message.text().contains("+1 к общей копилке"));
-        assertThat(afterCourseCheck.messages())
-            .anyMatch(message -> message.recipientUserId().equals(701L)
-                && message.text().contains("подписка на канал курса ещё не активна"));
 
         UserEntity referrer = userRepository.findByUserId(700L).orElseThrow();
         UserEntity invitee = userRepository.findByUserId(701L).orElseThrow();
@@ -336,8 +397,6 @@ class BotFlowServiceTest extends PostgresContainerTestBase {
         assertThat(invitee.getReferralStatus()).isEqualTo(ReferralStatus.PENDING);
         assertThat(invitee.isCourseChannelSubscribed()).isFalse();
         assertThat(referralLinkUsageRepository.findByReferrerUserIdAndInviteeUserId(700L, 701L)).isEmpty();
-        assertThat(flowContextRepository.findByUserId(701L).orElseThrow().getCurrentStep())
-            .isEqualTo(FlowStep.FLOW4_WAIT_COURSE_LINK_CONFIRM);
     }
 
     @Test
@@ -401,10 +460,13 @@ class BotFlowServiceTest extends PostgresContainerTestBase {
         UserEntity user = new UserEntity();
         user.setUserId(userId);
         user.setTelegramFirstName("Referrer");
+        user.setTelegramUsername("referrer");
         user.setUserName("Referrer");
         user.setAge(30);
         user.setPhone("+70000000000");
         user.setReadingLevel(ReadingLevel.KNOW_BASICS);
+        user.setHasChildren(false);
+        user.setChildrenCount(0);
         user.setSchoolChannelSubscribed(true);
         user.setCourseChannelSubscribed(true);
         user.setConsentGiven(true);
@@ -421,10 +483,13 @@ class BotFlowServiceTest extends PostgresContainerTestBase {
         UserEntity user = new UserEntity();
         user.setUserId(userId);
         user.setTelegramFirstName("Invitee");
+        user.setTelegramUsername("invitee");
         user.setUserName("Invitee");
         user.setAge(20);
         user.setPhone("+71111111111");
         user.setReadingLevel(ReadingLevel.READ_BY_SYLLABLES);
+        user.setHasChildren(false);
+        user.setChildrenCount(0);
         user.setSchoolChannelSubscribed(true);
         user.setCourseChannelSubscribed(false);
         user.setConsentGiven(true);
